@@ -1,2 +1,2 @@
 # torch-nansy
-Torch implementation of NANSY, arXiv:2110.14513
+Torch implementation of NANSY, Neural Analysis and Synthesis, arXiv:2110.14513
