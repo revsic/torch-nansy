@@ -65,7 +65,7 @@ class Wav2Vec2Wrapper(nn.Module):
         mean = (audio * mask).sum(dim=-1) / audiolen.to(torch.float32)
         # [B]
         var = (audio - mean[:, None]).square().sum(dim=-1) / audiolen.to(torch.float32)
-        # [B, T], for computational stability of square root
+        # [B, T], for numerical stability of square root
         normed = (audio - mean[:, None]) / (var[:, None] + 1e-7).sqrt()
         output = self.model(
             normed,
