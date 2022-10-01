@@ -47,8 +47,8 @@ class Wav2Vec2Wrapper(nn.Module):
                 masking the inputs if provided.
             return_all: return all hidden states if True, debugging purpose.
         Returns:
-            speaker: [torch.float32; [B, C]], speaker embeddings.
-            linguistic: [torch.float32; [B, S, C]], linguistic embeddings.
+            speaker: [torch.float32; [B, S, C]], verification purpose encodings.
+            linguistic: [torch.float32; [B, S, C]], linguistic encodings.
         """
         # B, T
         bsize, timestep = audio.shape
@@ -73,8 +73,8 @@ class Wav2Vec2Wrapper(nn.Module):
             output_hidden_states=True)
         if return_all:
             return output
-        # [B, C(=1024)]
-        speaker = output.hidden_states[self.speaker].mean(dim=1)
+        # [B, S, C(=1024)]
+        speaker = output.hidden_states[self.speaker]
         # [B, S, C(=1024)]
         linguistic = output.hidden_states[self.linguistic]
         return speaker, linguistic
