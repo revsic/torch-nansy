@@ -167,7 +167,18 @@ class EcapaTdnn(nn.Module):
                  dilations: List[int],
                  bottleneck: int,
                  hiddens: int):
-        """
+        """Initializer.
+        Args:
+            in_channels: size of the input channels.
+            out_channels: size of the output embeddings.
+            channels: size of the major states.
+            prekernels: size of the convolutional kernels before feed to SERes2Block.
+            scale: the number of the resolutions, for SERes2Block.
+            kernels: size of the convolutional kernels, for SERes2Block.
+            dilations: dilation factors.
+            bottleneck: size of the bottleneck layers,
+                both SERes2Block and AttentiveStatisticsPooling.
+            hiddens: size of the hidden channels for attentive statistics pooling.
         """
         super().__init__()
         # channels=512, prekernels=5
