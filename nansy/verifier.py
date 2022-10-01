@@ -104,7 +104,7 @@ class SERes2Block(nn.Module):
         # [B, C, T]
         x = self.postblock(x)
         # [B, C], squeeze and excitation
-        scale = self.excitation(x.mean(dim=1))
+        scale = self.excitation(x.mean(dim=-1))
         # [B, C, T]
         x = x * scale[..., None]
         # residual connection
@@ -141,8 +141,8 @@ class AttentiveStatisticsPooling(nn.Module):
         # [B, C, T]
         weights = self.attention(inputs)
         # [B, C]
-        mean = torch.sum(weights * x, dim=-1)
-        var = torch.sum(weights * x ** 2, dim=-1) - mean ** 2
+        mean = torch.sum(weights * inputs, dim=-1)
+        var = torch.sum(weights * inputs ** 2, dim=-1) - mean ** 2
         # [B, C x 2], for numerical stability of square root
         return torch.cat([mean, (var + 1e-7).sqrt()], dim=-1)
 
