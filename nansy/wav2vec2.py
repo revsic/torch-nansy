@@ -1,4 +1,3 @@
-import warnings
 from typing import Dict, Optional, Tuple
 
 import torch
@@ -10,7 +9,8 @@ class Wav2Vec2Wrapper(nn.Module):
     """Wrapping huggingface wav2vec2.0.
     """
     DEFAULT = 'facebook/wav2vec2-large-xlsr-53'
-
+    # Since 0-th hidden state is poosition-informed convolution features
+    # , one-base indexing required
     SPEAKER = 1
     LINGUISTIC = 12
 
@@ -26,6 +26,8 @@ class Wav2Vec2Wrapper(nn.Module):
         """
         super().__init__()
         name = name or Wav2Vec2Wrapper.DEFAULT
+        # warning can occurs since `Wav2Vec2Model` does not contain
+        # quantization modules
         self.model = Wav2Vec2Model.from_pretrained(name)
         self.eval()
 
@@ -35,21 +37,47 @@ class Wav2Vec2Wrapper(nn.Module):
     @torch.no_grad()
     def forward(self,
                 audio: torch.Tensor,
-                audiolen: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+                audiolen: Optional[torch.Tensor] = None,
+                return_all: bool = False) \
+            -> Tuple[torch.Tensor, torch.Tensor]:
         """Extract the features from audio.
         Args:
             audio: [torch.float32; [B, T]], 16khz audio, [-1, 1]-ranged.
-            audiolen: [torch.int32; [B]], length of the audios.
+            audiolen: [torch.long; [B]], length of the audios,
+                masking the inputs if provided.
+            return_all: return all hidden states if True, debugging purpose.
         Returns:
-
+            speaker: [torch.float32; [B, C]], speaker embeddings.
+            linguistic: [torch.float32; [B, S, C]], linguistic embeddings.
         """
-        ## 1. zero-mean, unit-var
-        normed = _
-        ## 2. attention mask
-        mask = _
-        ## 3. inference
-        self.model(normed, attention_mask=mask)
-        ## 4. layer selection
+        # B, T
+        bsize, timestep = audio.shape
+        if audiolen is None:
+            audiolen = torch.full(
+                (bsize,), timestep, dtype=torch.long, device=audio.device)
+        # [B, T]
+        mask = (
+            torch.arange(timestep, device=audiolen.device)[None]
+            < audiolen[:, None]).to(torch.float32)
+        ## normalize the inputs before feed to wav2vec2
+        ## , reference Wav2VecFeatureExtractor
+        # [B]
+        mean = (audio * mask).sum(dim=-1) / audiolen.to(torch.float32)
+        # [B]
+        var = (audio - mean[:, None]).square().sum(dim=-1) / audiolen.to(torch.float32)
+        # [B, T], for computational stability of square root
+        normed = (audio - mean[:, None]) / (var[:, None] + 1e-7).sqrt()
+        output = self.model(
+            normed,
+            attention_mask=mask.to(torch.long),
+            output_hidden_states=True)
+        if return_all:
+            return output
+        # [B, C(=1024)]
+        speaker = output.hidden_states[self.speaker].mean(dim=1)
+        # [B, S, C(=1024)]
+        linguistic = output.hidden_states[self.linguistic]
+        return speaker, linguistic
 
     def train(self, _: bool = True):
         """Support only evaluation
@@ -62,22 +90,3 @@ class Wav2Vec2Wrapper(nn.Module):
         """Do not load state dict.
         """
         pass
-
-
-if __name__ == '__main__':
-    PATH = 'D:\\dataset\\LibriTTS\\test-clean\\61\\70970\\61_70970_000007_000001.wav'
-
-    device = torch.device('cuda:0')
-
-    import librosa
-    out, _ = librosa.load(PATH, sr=16000)
-    ptout = torch.tensor(out, device=device)
-
-    model = Wav2Vec2Wrapper()
-    p = model.preproc(
-        [out, out[::2]], padding=True, return_tensors='pt')
-    print(p)
-
-    normed = (ptout - ptout.mean()) / (ptout.var() + 1e-7).sqrt()
-
-    print(normed[:10])
