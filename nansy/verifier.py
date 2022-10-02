@@ -196,6 +196,7 @@ class EcapaTdnn(nn.Module):
             nn.Conv1d(len(dilations) * channels, hiddens, 1),
             nn.ReLU())
         # attentive pooling and additional projector
+        # out_channels=192
         self.pool = nn.Sequential(
             AttentiveStatisticsPooling(hiddens, bottleneck),
             nn.BatchNorm1d(hiddens * 2),
