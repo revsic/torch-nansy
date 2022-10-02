@@ -54,7 +54,7 @@ class Wav2Vec2Wrapper(nn.Module):
         Returns:
             speaker: [torch.float32; [B, S, C]], verification purpose encodings.
             linguistic: [torch.float32; [B, S, C]], linguistic encodings,
-                where S = T // 320, T = ceil(T' / `sr` x 16000)
+                where S = T // 320, T = floor(T' / `sr` x 16000)
         """
         # [B, T]
         audio = self.resample(audio)
