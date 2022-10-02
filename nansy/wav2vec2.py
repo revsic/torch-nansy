@@ -48,7 +48,8 @@ class Wav2Vec2Wrapper(nn.Module):
             return_all: return all hidden states if True, debugging purpose.
         Returns:
             speaker: [torch.float32; [B, S, C]], verification purpose encodings.
-            linguistic: [torch.float32; [B, S, C]], linguistic encodings.
+            linguistic: [torch.float32; [B, S, C]], linguistic encodings,
+                where S = T // 320
         """
         # B, T
         bsize, timestep = audio.shape
