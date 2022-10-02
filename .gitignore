@@ -1,2 +1,6 @@
+# caches
 __pycache__
 .ipynb_checkpoints
+
+# test
+test.ipynb
