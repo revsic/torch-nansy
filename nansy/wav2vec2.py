@@ -2,6 +2,7 @@ from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
+import torchaudio
 from transformers import Wav2Vec2Model
 
 
@@ -16,6 +17,7 @@ class Wav2Vec2Wrapper(nn.Module):
 
     def __init__(self,
                  name: Optional[str] = None,
+                 sr: int = 16000,
                  speaker: Optional[int] = None,
                  linguistic: Optional[int] = None):
         """Load the wav2vec2.0 pretrained model.
@@ -31,6 +33,9 @@ class Wav2Vec2Wrapper(nn.Module):
         self.model = Wav2Vec2Model.from_pretrained(name)
         self.eval()
 
+        self.sr = sr
+        self.resample = torchaudio.transforms.Resample(sr, 16000)
+
         self.speaker = speaker or Wav2Vec2Wrapper.SPEAKER
         self.linguistic = linguistic or Wav2Vec2Wrapper.LINGUISTIC
 
@@ -42,20 +47,25 @@ class Wav2Vec2Wrapper(nn.Module):
             -> Tuple[torch.Tensor, torch.Tensor]:
         """Extract the features from audio.
         Args:
-            audio: [torch.float32; [B, T]], 16khz audio, [-1, 1]-ranged.
+            audio: [torch.float32; [B, T']], audio, [-1, 1]-ranged.
             audiolen: [torch.long; [B]], length of the audios,
                 masking the inputs if provided.
             return_all: return all hidden states if True, debugging purpose.
         Returns:
             speaker: [torch.float32; [B, S, C]], verification purpose encodings.
             linguistic: [torch.float32; [B, S, C]], linguistic encodings,
-                where S = T // 320
+                where S = T // 320, T = ceil(T' / `sr` x 16000)
         """
+        # [B, T]
+        audio = self.resample(audio)
         # B, T
         bsize, timestep = audio.shape
         if audiolen is None:
             audiolen = torch.full(
                 (bsize,), timestep, dtype=torch.long, device=audio.device)
+        else:
+            # rearange to 16khz audio frames
+            audiolen = torch.ceil(audiolen / self.sr * 16000).to(torch.long)
         # [B, T]
         mask = (
             torch.arange(timestep, device=audiolen.device)[None]
