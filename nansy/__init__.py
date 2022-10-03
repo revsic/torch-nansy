@@ -50,7 +50,8 @@ class Nansy(nn.Module):
             config.yin_strides,
             config.yin_windows,
             config.yin_lmin,
-            config.yin_lmax)
+            config.yin_lmax,
+            config.sr)
         # compute channels
         self.yin_delta, self.yin_range, _ = config.yingram_channels()
 
@@ -131,7 +132,7 @@ class Nansy(nn.Module):
 
     def forward(self,
                 audio: torch.Tensor,
-                audiolen: Optional[torch.Tensor]) \
+                audiolen: Optional[torch.Tensor] = None) \
             -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Reconstruct the audio.
         Args:
@@ -150,6 +151,7 @@ class Nansy(nn.Module):
             'spk': spk,
             'energy': energy,
             'yingram_full': yingram_full,
+            'yingram': yingram,
             'synth': synth,
             'filter': filter_,
             'source': source}
@@ -173,7 +175,7 @@ class Nansy(nn.Module):
             optim: optimizer, if provided.
         """
         config = Config()
-        for key, val in states['config']:
+        for key, val in states['config'].items():
             if not hasattr(config, key):
                 import warnings
                 warnings.warn(f'unidentified key {key}')
