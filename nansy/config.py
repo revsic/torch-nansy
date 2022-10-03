@@ -23,7 +23,7 @@ class Config:
 
         # yingram
         self.yin_strides = 450  # targeting 49hz on 22050hz sr
-        self.yin_windows = 204
+        self.yin_windows = 2048
         self.yin_lmin = 22      # 1000.40hz, 83midi(floor)
         self.yin_lmax = 2047    #   10.77hz,  5midi(ceil), 79-channel yingram
 
@@ -48,7 +48,7 @@ class Config:
         self.ver_channels = 512
         self.ver_prekernels = 5
         self.ver_scale = 8
-        self.ver_kenrels = 3
+        self.ver_kernels = 3
         self.ver_dilations = [2, 3, 4]
         self.ver_bottleneck = 128
         self.ver_hiddens = 1536
@@ -60,8 +60,8 @@ class Config:
         # syn_spk = ver_out_channels
         self.syn_kernels = 3
         self.syn_dilation = 3
-        self.syn_leak = _       # default nn.LeakyReLU = 0.01
-        self.syn_dropout = _    # default nn.Dropout   = 0.5
+        self.syn_leak = 0.2       # no ref, default nn.LeakyReLU = 0.01
+        self.syn_dropout = 0.2    # no ref, default nn.Dropout   = 0.5
         self.syn_preconv_blocks = 2
         self.syn_preblocks = [4, 4, 2]
         self.syn_postblocks = [4, 4, 2]
