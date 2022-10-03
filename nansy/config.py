@@ -45,3 +45,14 @@ class Config:
         self.ver_hiddens = 1536
 
         # synthesizer
+        # syn_in_channels = yingram or wa2vec2
+        # syn_out_channels = mel_filters
+        self.syn_channels = 128
+        # syn_spk = ver_out_channels
+        self.syn_kernels = 3
+        self.syn_dilation = 3
+        self.syn_leak = _       # default nn.LeakyReLU = 0.01
+        self.syn_dropout = _    # default nn.Dropout   = 0.5
+        self.syn_preconv_blocks = 2
+        self.syn_preblocks = [4, 4, 2]
+        self.syn_postblocks = [4, 4, 2]
