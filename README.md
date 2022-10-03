@@ -6,7 +6,7 @@ Torch implementation of NANSY, Neural Analysis and Synthesis, arXiv:2110.14513
 - [x] wav2vec2 wrapper
 - [x] verifier
 - [x] yingram
-- [ ] energy
+- [x] energy (melspectrogram)
 - [ ] generator
 - [ ] discriminator
 - [ ] perturbation
