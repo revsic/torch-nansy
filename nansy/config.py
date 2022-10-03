@@ -1,4 +1,22 @@
+from typing import Dict, Tuple
+
+from .yingram import Yingram
+
+
 class Config:
+    def yingram_channels(self) -> Tuple[int, int, Dict[str, int]]:
+        # midi-range
+        mmin, mmax = Yingram.midi_range(self.sr, self.yin_lmin, self.yin_lmax)
+        # hertz to lag
+        lmin, lmax = int(self.sr / self.yin_hmax), int(self.sr / self.yin_hmin)
+        # for feeding synthesizer
+        s_mmin, s_mmax = Yingram.midi_range(self.sr, lmin, lmax)
+        # for sampling
+        delta, range_ = s_mmin - mmin, s_mmax - s_mmin + 1
+        return delta, range_, {
+            'yin-midi-min': mmin, 'yin-midi-max': mmax,
+            'syn-midi-min': s_mmin, 'syn-midi-max': s_mmax}
+
     def __init__(self):
         # sample rate
         self.sr = 22050
@@ -6,10 +24,10 @@ class Config:
         # yingram
         self.yin_strides = 450  # targeting 49hz on 22050hz sr
         self.yin_windows = 204
-        self.yin_lmin = 22      # 1000.40hz, 83midi
-        self.yin_lmax = 2047    #   10.77hz,  4midi, 79-channel yingram
+        self.yin_lmin = 22      # 1000.40hz, 83midi(floor)
+        self.yin_lmax = 2047    #   10.77hz,  5midi(ceil), 79-channel yingram
 
-        self.yin_hmin = 25.11   # 878 lag, 19midi, +15 from lmin
+        self.yin_hmin = 25.11   # 878 lag, 20midi, +15 from lmin
         self.yin_hmax = 430.19  #  51 lag, 68midi, 49-channel
 
         # mel-spectrogram
