@@ -42,6 +42,14 @@ class ConvGLU(nn.Module):
                  blocks: int,
                  spk: Optional[int] = None):
         """Initializer.
+        Args:
+            channels: size of the input channels.
+            dropout: dropout rate.
+            kernels: size of the convolutional kernels.
+            dilation: dilation factor.
+            blocks: the number of the convolution blocks.
+            spk: size of the speaker embedding,
+                use conditional layer normalization if provided.
         """
         super().__init__()
         self.blocks = nn.ModuleList([
@@ -97,6 +105,19 @@ class Synthesizer(nn.Module):
                  preblocks: List[int],
                  postblocks: List[int]):
         """Initializer.
+        Args:
+            in_channels: size of the input channels.
+            out_channels: size of the output channels.
+            channels: size of the hidden states.
+            spk: size of the speaker embeddings.
+            kernels: size of the convolutional kernels.
+            dilation: dilation factor.
+            leak: negative slope of leaky relu.
+            dropout: dropout rates.
+            preconv_blocks: the number of the convolution blocks before feed to ConvGLU.
+            preblocks: the number of the ConvGLU blocks
+                before conditioning the speaker and enrgy.
+            postblocks: the number of the ConvGLU blocks with speaker conditioning.
         """
         super().__init__()
         # ref:NANSY, arXiv:2110.14513, Figure7
