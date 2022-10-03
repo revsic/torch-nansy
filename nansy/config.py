@@ -1,12 +1,4 @@
-from .yingram import Yingram
-
-
 class Config:
-    """NANSY hyperparameters.
-    """
-    def yingram_channels(self) -> int:
-
-
     def __init__(self):
         # sample rate
         self.sr = 22050
@@ -29,7 +21,6 @@ class Config:
     
         # wav2vec2
         self.w2v_name = 'facebook/wav2vec2-large-xlsr-53'
-        self.w2v_sr = 16000
         self.w2v_spk = 1
         self.w2v_lin = 12
 
