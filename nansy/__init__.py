@@ -186,3 +186,4 @@ class Nansy(nn.Module):
         nansy.load_state_dict(states['model'])
         if optim is not None:
             optim.load_state_dict(states['optim'])
+        return nansy
