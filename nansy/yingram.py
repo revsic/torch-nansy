@@ -1,7 +1,31 @@
+from typing import Tuple
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+
+def m2l(sr: float, m: float) -> float:
+    """Midi-to-lag converter.
+    Args:
+        sr: sample rate.
+        m: midi-scale.
+    Returns;
+        corresponding time-lag.
+    """
+    return sr / (440 * 2 ** ((m - 69) / 12))
+
+
+def l2m(sr: float, l: float) -> float:
+    """Lag-to-midi converter.
+    Args:
+        sr: sample rate.
+        l: time-lag.
+    Returns:
+        corresponding midi-scale value.
+    """
+    return 12 * np.log2(sr / (440 * l)) + 69
 
 
 class Yingram(nn.Module):
@@ -26,6 +50,19 @@ class Yingram(nn.Module):
         self.windows = windows
         self.lmin, self.lmax = lmin, lmax
         self.sr = sr
+        # midi range
+        self.mmin, self.mmax = Yingram.midi_range(sr, lmin, lmax)
+
+    @staticmethod
+    def midi_range(sr: int, lmin: int, lmax: int) -> Tuple[int, int]:
+        """Convert time-lag range to midi-range.
+        Args:
+            sr: sample rate.
+            lmin, lmax: bounds of time-lag.
+        Returns:
+            bounds of midi-scale range, closed interval.
+        """
+        return int(np.ceil(l2m(sr, lmax))), int(l2m(sr, lmin))
 
     def forward(self, audio: torch.Tensor) -> torch.Tensor:
         """Compute the yingram from audio signal.
@@ -69,13 +106,10 @@ class Yingram(nn.Module):
         cumdiff = cumdiff * torch.arange(1, tau_max, device=cumdiff.device)
         # [B, T / strides, lmax], cumulative mean normalized difference
         cumdiff = F.pad(cumdiff, [1, 0], value=1.)
-        # midi-to-lag
-        def m2l(m): return self.sr / (440 * 2 ** ((m - 69) / 12))
-        def l2m(l): return 12 * np.log2(self.sr / (440 * l)) + 69
-        # midi range
-        mmin, mmax = int(np.ceil(l2m(self.lmax))), int(l2m(self.lmin))
-        # [L]
-        lags = m2l(torch.arange(mmin, mmax + 1, device=cumdiff.device))
+        # [mmax - mmin + 1]
+        lags = m2l(
+            self.sr,
+            torch.arange(self.mmin, self.mmax + 1, device=cumdiff.device))
         lceil, lfloor = lags.ceil().long(), lags.floor().long()
         # [B, T / strides, mmax - mmin + 1], yingram
         return (
