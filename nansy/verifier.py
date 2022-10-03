@@ -2,6 +2,7 @@ from typing import List
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class Res2Block(nn.Module):
@@ -223,4 +224,4 @@ class EcapaTdnn(nn.Module):
         # [B, H, T]
         x = self.conv1x1(torch.cat(xs, dim=1))
         # [B, O]
-        return self.pool(x)
+        return F.normalize(self.pool(x), p=2, dim=-1)
