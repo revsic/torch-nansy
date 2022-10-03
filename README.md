@@ -9,7 +9,7 @@ Torch implementation of NANSY, Neural Analysis and Synthesis, arXiv:2110.14513
 - [x] energy (melspectrogram)
 - [x] synthesizer
 - [x] generator
-- [ ] discriminator
+- [x] discriminator
 - [ ] perturbation
 - [ ] train
 - [ ] inference
