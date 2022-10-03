@@ -1,2 +1,4 @@
+numpy==1.22.3
 pytorch==1.11.0
+torchaudio==0.11.0
 transformers==4.22.1
