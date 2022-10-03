@@ -15,6 +15,8 @@ class Wav2Vec2Wrapper(nn.Module):
     SPEAKER = 1
     LINGUISTIC = 12
 
+    OUT_CHANNELS = 1024
+
     def __init__(self,
                  name: Optional[str] = None,
                  sr: int = 16000,
