@@ -47,8 +47,19 @@ class Config:
     def __init__(self):
         self.data = DataConfig(batch=None)
         self.train = TrainConfig(self.data.sr, self.data.hop)
-        self.model = ModelConfig(self.data.mel)
-        self.disc = DiscConfig(self.model.steps)
+        self.model = ModelConfig()
+        self.disc = DiscConfig(self.data.mel, self.model.ver_out_channels)
+
+    def validate(self):
+        assert (
+            self.data.sr == self.model.sr
+            and self.data.mel == self.model.mel_filters
+            and self.data.hop == self.model.mel_strides
+            and self.data.win == self.model.mel_windows
+            and self.data.fft == self.model.mel_windows
+            and self.data.fmin == self.model.mel_fmin
+            and self.data.fmax == self.model.mel_fmax), \
+                'inconsistent data and model settings'
 
     def dump(self):
         """Dump configurations into serializable dictionary.
