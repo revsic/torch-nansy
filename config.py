@@ -17,6 +17,18 @@ class TrainConfig:
         self.beta1 = 0.5
         self.beta2 = 0.9
 
+        # augment
+        self.num_code = 32
+        self.formant_shift = 1.4
+        self.pitch_shift = 1.5
+        self.cutoff_lowpass = 60
+        self.cutoff_highpass = 10
+        self.q_min = 2
+        self.q_max = 5
+        self.num_peak = 8
+        self.g_min = -12
+        self.g_max = 12
+
         # loader settings
         self.batch = 32
         self.shuffle = True
