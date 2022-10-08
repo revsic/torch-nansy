@@ -1,96 +1,100 @@
-from typing import Union
-
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-import torchaudio.functional as AF
 
-from nansy.config import Config
+from .lpc import LinearPredictiveCoding
+
+from config import Config
 
 
-class Augment:
+class Augment(nn.Module):
     """Waveform augmentation.
     """
-    def __init__(self, config: Config, device: torch.device):
+    def __init__(self, config: Config):
         """Initializer.
         Args:
             config: Nansy configurations.
-            device: torch device.
         """
+        super().__init__()
         self.config = config
-        self.device = device
-        self.window = torch.hann_window(config.mel_windows, device=device)
+        self.coder = LinearPredictiveCoding(
+            config.train.num_code, config.data.win, config.data.hop)
+        self.register_buffer(
+            'window',
+            torch.hann_window(config.data.win),
+            persistent=False)
 
-    def _pitch_shift(self,
-                     wavs: torch.Tensor,
-                     steps: int,
-                     bins_per_octave: int = 12) -> torch.Tensor:
-        """Pitch shifting implementations.
-        """
-        # alias
-        w, s = self.config.mel_windows, self.config.mel_strides
-        return AF.pitch_shift(
-            wavs, self.config.sr,
-            steps, bins_per_octave=bins_per_octave,
-            n_fft=w, hop_length=s, window=self.window)
-
-    def pitch_shift(self,
-                    wavs: torch.Tensor,
-                    steps: Union[int, torch.Tensor],
-                    bins_per_octave: int = 12) -> torch.Tensor:
-        """Pitch shifts.
+    def forward(self,
+                wavs: torch.Tensor,
+                pitch_shift: torch.Tensor,
+                formant_shift: torch.Tensor,
+                mode: str = 'linear') -> torch.Tensor:
+        """Augment the audio signal, random pitch, formant shift and PEQ.
         Args:
-            wavs: [torch.float32; [B, T]], audio signal, [-1, 1]-ranged.
-            steps: [B], pitch shifts.
-            bins_per_octave: the number of steps per octave.
+            wavs: [torch.float32; [B, T]], audio signal.
+            pitch_shift: [torch.float32; [B]], pitch shifts.
+            formant_shift: [torch.float32; [B]], formant shifts.
+            mode: interpolation mode, `linear` or `nearest`.
         Returns:
-            [torch.float32; [B, T]], shifted.
+            [torch.float32; [B, T]], augmented.
         """
-        # [B, T]
-        if isinstance(steps, int):
-            return self._pitch_shift(wavs, steps, bins_per_octave)
-        # [B, T]
-        return torch.cat([
-            self._pitch_shift(wav[None], step.item(), bins_per_octave)
-            for step, wav in zip(steps, wavs)], dim=0)
-
-    def formant_shift(self,
-                      wavs: torch.Tensor,
-                      shifts: Union[float, torch.Tensor]) -> torch.Tensor:
-        """Formant shifts, rough approximations of praat-parselmouth.
-        Args:
-            wavs: [torch.float32; [B, T]], audio signal, [-1, 1]-ranged.
-            shifts: [B], formant shifts.
-        Returns:
-            [torch.float32; [B, T]], shifted.
-        """
-        # alias
-        windows, strides = self.config.mel_windows, self.config.mel_strides
-        # [B, windows // 2 + 1, T / strides]
-        stft = torch.stft(
+        # [B, F, T / S], complex64
+        fft = torch.stft(
             wavs,
-            windows,
-            self.config.mel_strides,
-            window=torch.hann_window(windows, device=wavs.device),
+            self.config.data.fft,
+            self.config.data.hop,
+            self.config.data.win,
+            self.window,
             return_complex=True)
-        # F = windows // 2 + 1
-        num_freq = windows // 2 + 1
-        # [F, F]
-        mapper = torch.eye(num_freq // 2 + 1)
-        def mapper_fn(shift: float) -> torch.Tensor:
-            # [F, min(F x shift, F)]
-            m = F.interpolate(
-                mapper[None],
-                scale_factor=shift,
-                mode='linear')[0, :, :num_freq]
-            # [F, F]
-            return F.pad(m, [0, num_freq - m.shape[-1]]).T
-        # [B, F, F]
-        if isinstance(shifts, float):
-            interp = mapper_fn(shifts)[None].repeat(stft.shape[0])
-        else:
-            interp = torch.stack([
-                mapper_fn(shift.item()) for shift in shifts])
+        # [B, T / S, num_code]
+        code = self.coder.from_stft(fft)
+        # [B, T / S, F]
+        filter_ = self.coder.envelope(code)
+        source = fft.transpose(1, 2) / (filter_ + 1e-7)
+            # filter_[source.isnan()])
+        # [B, T / S, F]
+        aug_filter = self.interp(filter_, formant_shift, mode=mode)
+        aug_source = self.interp(source, pitch_shift, mode=mode)
         # [B, T]
         return torch.istft(
-            torch.matmul(interp.to(torch.complex64), stft),
-            windows, strides, window=self.window)
+            (aug_source * aug_filter).transpose(1, 2),
+            self.config.data.fft,
+            self.config.data.hop,
+            self.config.data.win,
+            self.window)
+
+    @staticmethod
+    def complex_interp(inputs: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        """Interpolate the complex tensor.
+        Args:
+            inputs: [torch.complex64; [B, C, ...]], complex inputs.
+        Returns:
+            [torch.complex64; [B, C, ...]], interpolated.
+        """
+        mag = F.interpolate(inputs.abs(), *args, **kwargs)
+        angle = F.interpolate(inputs.angle(), *args, **kwargs)
+        return torch.polar(mag, angle)
+
+    def interp(self,
+               inputs: torch.Tensor,
+               shifts: torch.Tensor,
+               mode: str) -> torch.Tensor:
+        """Interpolate the channel axis with dynamic shifts.
+        Args:
+            inputs: [torch.complex64; [B, T, C]], input tensor.
+            shifts: [torch.float32; [B]], shift factor.
+            mode: interpolation mode.
+        Returns:
+            [torch.complex64; [B, T, C]], interpolated.
+        """
+        # _, _, C
+        _, _, channels = inputs.shape
+        # B x [1, T, C x min(1., shifts)]
+        interp = [
+            Augment.complex_interp(
+                f[None], scale_factor=s.item(), mode=mode)[..., :channels]
+            for f, s in zip(inputs, shifts)]
+        # [B, T, C]
+        return torch.cat([
+            F.pad(f, [0, channels - f.shape[-1]])
+            for f in interp], dim=0)
