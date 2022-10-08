@@ -58,7 +58,8 @@ class Config:
             and self.data.win == self.model.mel_windows
             and self.data.fft == self.model.mel_windows
             and self.data.fmin == self.model.mel_fmin
-            and self.data.fmax == self.model.mel_fmax), \
+            and self.data.fmax == self.model.mel_fmax
+            and self.data.win_fn == 'hann'), \
                 'inconsistent data and model settings'
 
     def dump(self):
