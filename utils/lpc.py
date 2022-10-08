@@ -55,8 +55,8 @@ class LinearPredictiveCoding(nn.Module):
         Returns:
             [torch.float32; [..., windows // 2 + 1]], filters.
         """
-        return 1 / torch.fft.rfft(
-            -F.pad(lpc, [1, 0], value=1.), self.windows, dim=-1)
+        return 1 / (torch.fft.rfft(
+            -F.pad(lpc, [1, 0], value=1.), self.windows, dim=-1).abs() + 1e-7)
 
     @staticmethod
     def autocorr(wavs: torch.Tensor) -> torch.Tensor:
