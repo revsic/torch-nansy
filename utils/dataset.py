@@ -89,7 +89,7 @@ class PairedDataset(SpeechSet):
             return sid, p1, p2
         # normalize the slice
         bunches = [
-            (sid, [self.normalize(*self.preproc(p)) for p in paths])
+            (sid, *[self.normalize(*self.preproc(p)) for p in paths])
             for sid, *paths in raw]
         return self.collate(bunches)
 
@@ -111,7 +111,7 @@ class PairedDataset(SpeechSet):
         """
         return speech
 
-    def collate(self, bunch: List[Tuple[int, Tuple[np.ndarray, np.ndarray]]]) \
+    def collate(self, bunch: List[Tuple[int, np.ndarray, np.ndarray]]) \
             -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Collate bunch of datum to the batch data.
         Args:
@@ -125,15 +125,15 @@ class PairedDataset(SpeechSet):
                 speech1, speech2: [np.float32; [B, T]], speech signal.
         """
         # [B]
-        sids = np.array([sid for sid, _ in bunch])
+        sids = np.array([sid for sid, _, _ in bunch])
         # [B, 2]
-        lengths = np.array([[len(s1), len(s2)] for _, (s1, s2) in bunch])
+        lengths = np.array([[len(s1), len(s2)] for _, s1, s2 in bunch])
         len1, len2 = lengths.max(axis=0)
         # [B, T]
         speech1 = np.stack([
-            np.pad(signal, [0, len1 - len(signal)]) for _, (signal, _) in bunch])
+            np.pad(signal, [0, len1 - len(signal)]) for _, signal, _ in bunch])
         speech2 = np.stack([
-            np.pad(signal, [0, len2 - len(signal)]) for _, (_, signal) in bunch])
+            np.pad(signal, [0, len2 - len(signal)]) for _, _, signal in bunch])
         return sids, lengths, speech1, speech2
 
 
