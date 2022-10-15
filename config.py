@@ -22,7 +22,7 @@ class TrainConfig:
         self.formant_shift = 1.4
         self.pitch_shift = 1.5
         self.cutoff_lowpass = 60
-        self.cutoff_highpass = 10
+        self.cutoff_highpass = 10000
         self.q_min = 2
         self.q_max = 5
         self.num_peak = 8
