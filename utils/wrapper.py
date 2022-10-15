@@ -56,7 +56,7 @@ class TrainingWrapper:
         """
         # [B], [B, 2], [B, T], [B, T]
         sid, lengths, s1, s2 = bunch
-        def segment(seq: np.ndrarray, len_: np.ndarray) -> np.ndarray:
+        def segment(seq: np.ndarray, len_: np.ndarray) -> np.ndarray:
             # [B]
             start = np.random.randint(np.maximum(1, len_ - self.seglen))
             # [B, seglen]
