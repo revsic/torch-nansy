@@ -154,7 +154,7 @@ class Trainer:
                     sid, s1, s2 = self.wrapper.wrap(
                         self.wrapper.random_segment(bunch))
                     _, losses_g, _ = self.wrapper.loss_generator(sid, s1, s2)
-                    _, losses_d, _ = self.wrapper.loss_discriminator(sid, s1, s2)
+                    _, losses_d, _ = self.wrapper.loss_discriminator(sid, s1, s2, r1=False)
                     for key, val in {**losses_g, **losses_d}.items():
                         losses[key].append(val)
                 # test log

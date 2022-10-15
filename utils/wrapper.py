@@ -69,7 +69,10 @@ class TrainingWrapper:
 
     def sample_like(self, signal: torch.Tensor) -> List[torch.Tensor]:
         """Sample augmentation parameters.
-
+        Args:
+            signal: [torch.float32; [B, T]], speech signal.
+        Returns:
+            augmentation parameters.
         """
         # [B]
         bsize, _ = signal.shape
@@ -120,12 +123,17 @@ class TrainingWrapper:
         # [B, T]
         return saves[:bsize]
 
-    def loss_discriminator(self, sid: torch.Tensor, s1: torch.Tensor, s2: torch.Tensor) \
+    def loss_discriminator(self,
+                           sid: torch.Tensor,
+                           s1: torch.Tensor,
+                           s2: torch.Tensor,
+                           r1: bool = True) \
             -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Compute the discriminator loss.
         Args:
             sid: [torch.long; [B]], speaker id.
             s1, s2: [torch.float32; [B, seglen]], segmented speech.
+            r1: whether use r1-regularization, for evaluation loss.
         Returns:
             loss and disctionaries.
         """
@@ -155,7 +163,7 @@ class TrainingWrapper:
                 linguistic.transpose(1, 2), spk1, energy, yingram)
 
         # for gradient penalty
-        mel.requires_grad_(True)
+        mel.requires_grad_(r1)
         # [B, T], [B, spk, T]
         d_real, spk_real = self.disc.forward(mel)
         # [B, T], [B, spk, T]
@@ -177,14 +185,18 @@ class TrainingWrapper:
         logits_real = d_real + (pos_real - neg_real)
         logits_fake = d_fake + (pos_fake - neg_fake)
 
-        # gradient penalty
-        r1_grads = torch.autograd.grad(
-            outputs=[d_real.sum()],
-            inputs=[mel],
-            create_graph=True,
-            only_inputs=True)[0]
-        # []
-        r1_penalty = r1_grads.square().sum(dim=[1, 2]).mean()
+        if r1:
+            # gradient penalty
+            r1_grads = torch.autograd.grad(
+                outputs=[d_real.sum()],
+                inputs=[mel],
+                create_graph=True,
+                only_inputs=True)[0]
+            # []
+            r1_penalty = r1_grads.square().sum(dim=[1, 2]).mean()
+        else:
+            # no loss
+            r1_penalty = torch.tensor([0.], device=mel.device)
 
         # masking if fail to construct negative pair
         logits_real = logits_real[sid != sid[indices]]
