@@ -132,19 +132,19 @@ class Trainer:
                     if (it + 1) % (len(self.loader) // 50) == 0:
                         self.train_log.add_image(
                             'train/gt',
-                            self.mel_img(aux_g['mel'][Trainer.LOG_IDX].cpu().numpy()), step)
+                            self.mel_img(aux_g['mel'][Trainer.LOG_IDX]), step)
                         self.train_log.add_image(
                             'train/rctor',
-                            self.mel_img(aux_g['rctor'][Trainer.LOG_IDX].cpu().numpy()), step)
+                            self.mel_img(aux_g['rctor'][Trainer.LOG_IDX]), step)
                         self.train_log.add_image(
                             'train/filter',
-                            self.mel_img(aux_g['filter'][Trainer.LOG_IDX].cpu().numpy()), step)
+                            self.mel_img(aux_g['filter'][Trainer.LOG_IDX]), step)
                         self.train_log.add_image(
                             'train/source',
-                            self.mel_img(aux_g['source'][Trainer.LOG_IDX].cpu().numpy()), step)
+                            self.mel_img(aux_g['source'][Trainer.LOG_IDX]), step)
                         self.train_log.add_image(
                             'train/yingram',
-                            self.mel_img(aux_g['yingram'][Trainer.LOG_IDX].cpu().numpy()), step)
+                            self.mel_img(aux_g['yingram'][Trainer.LOG_IDX]), step)
             losses = {
                 key: [] for key in {**losses_d, **losses_g}}
             with torch.no_grad():
@@ -219,7 +219,7 @@ if __name__ == '__main__':
         os.makedirs(ckpt_path)
 
     # prepare datasets
-    libritts = PairedDataset(speechset.datasets.LibriTTS(args.out_dir))
+    libritts = PairedDataset(speechset.datasets.LibriTTS(args.data_dir))
 
     # model definition
     device = torch.device(
