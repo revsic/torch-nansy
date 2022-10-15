@@ -30,6 +30,7 @@ class TrainConfig:
         self.g_max = 12
 
         # loader settings
+        self.split = -5
         self.batch = 32
         self.shuffle = True
         self.num_workers = 4
