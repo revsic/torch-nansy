@@ -1,3 +1,6 @@
 [submodule "speechset"]
 	path = speechset
 	url = https://github.com/revsic/speechset
+[submodule "hifi-gan"]
+	path = hifi-gan
+	url = https://github.com/jik876/hifi-gan
