@@ -2,6 +2,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 from config import Config
 from disc import Discriminator
@@ -156,22 +157,25 @@ class TrainingWrapper:
         logits_fake = d_fake + (pos_fake - neg_fake)
 
         # masking if fail to construct negative pair
-        disc_real = torch.sigmoid(logits_real[sid != sid[indices]]).clamp_min(1e-7).log().mean()
-        disc_fake = torch.sigmoid(logits_fake[sid != sid[indices]]).clamp_min(1e-7).log().mean()
+        logits_real = logits_real[sid != sid[indices]]
+        logits_fake = logits_fake[sid != sid[indices]]
+        disc_real = F.binary_cross_entropy_with_logits(
+            logits_real, torch.ones_like(logits_real))
+        disc_fake = F.binary_cross_entropy_with_logits(
+            logits_fake, torch.zeros_like(logits_fake))
         loss = disc_real - disc_fake
         losses = {
-            'real-disc': d_real.mean().item(),
-            'real-disc-std': d_real.std().item(),
-            'fake-disc': d_fake.mean().item(),
-            'fake-disc-std': d_fake.std().item(),
-            'real-pos': pos_real.mean().item(),
-            'real-pos-std': pos_real.std().item(),
-            'fake-pos': pos_fake.mean().item(),
-            'fake-pos-std': pos_fake.std().item(),
-            'real-neg': neg_real[sid != sid[indices]].mean().item(),
-            'real-neg-std': neg_real[sid != sid[indices]].std().item(),
-            'fake-neg': neg_fake[sid != sid[indices]].mean().item(),
-            'fake-neg-std': neg_fake[sid != sid[indices]].std().item()}
+            'disc/loss': loss.item(),
+            'disc/disc-real': disc_real.item(),
+            'disc/disc-fake': disc_fake.item(),
+            'disc/logits-real': logits_real.mean().item(),
+            'disc/logits-fake': logits_fake.mean().item(),
+            'disc/d-real': d_real.mean().item(),
+            'disc/d-fake': d_fake.mean().item(),
+            'disc/pos-real': pos_real.mean().item(),
+            'disc/pos-fake': pos_fake.mean().item(),
+            'disc/neg-real': neg_real[sid != sid[indices]].mean().item(),
+            'disc/neg-fake': neg_fake[sid != sid[indices]].mean().item()}
         return loss, losses, {
             'yingram': yingram.cpu().detach().numpy(),
             'mel': mel.cpu().detach().numpy(),
@@ -227,18 +231,18 @@ class TrainingWrapper:
         # [B, T]
         logits = d_fake + (pos - neg)
         # masking if fail to construct negative pair
-        disc = torch.sigmoid(logits[sid != sid[indices]]).clamp_min(1e-7).log().mean()
+        logits = logits[sid != sid[indices]]
+        disc = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits))
         # []
         loss = disc + rctor_loss
         losses = {
-            'rctor': rctor_loss.item(),
-            'rctor-std': (mel - rctor).abs().std().item(),
-            'gen-disc': d_fake.mean().item(),
-            'gen-disc-std': d_fake.std().item(),
-            'pos': pos.mean().item(),
-            'pos-std': pos.std().item(),
-            'neg': neg[sid != sid[indices]].mean().item(),
-            'neg-std': neg[sid != sid[indices]].std().item()}
+            'gen/loss': loss.item(),
+            'gen/rctor': rctor_loss.item(),
+            'gen/disc': disc.item(),
+            'gen/logits': logits.mean().item(),
+            'gen/d-fake': d_fake.mean().item(),
+            'gen/pos': pos.mean().item(),
+            'gen/neg': neg[sid != sid[indices]].mean().item()}
         return loss, losses, {
             'yingram': yingram.cpu().detach().numpy(),
             'mel': mel.cpu().detach().numpy(),
