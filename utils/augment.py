@@ -43,7 +43,8 @@ class Augment(nn.Module):
                 formant_shift: Optional[torch.Tensor] = None,
                 quality_power: Optional[torch.Tensor] = None,
                 gain: Optional[torch.Tensor] = None,
-                mode: str = 'linear') -> torch.Tensor:
+                mode: str = 'linear',
+                return_aux: bool = False) -> torch.Tensor:
         """Augment the audio signal, random pitch, formant shift and PEQ.
         Args:
             wavs: [torch.float32; [B, T]], audio signal.
@@ -53,9 +54,11 @@ class Augment(nn.Module):
                 exponents of quality factor, for PEQ.
             gain: [torch.float32; [B, num_peak]], gain in decibel.
             mode: interpolation mode, `linear` or `nearest`.
+            return_aux: return the auxiliary values if True, only for debugging purpose.
         Returns:
             [torch.float32; [B, T]], augmented.
         """
+        auxs = {}
         # [B, F, T / S], complex64
         fft = torch.stft(
             wavs,
@@ -64,20 +67,6 @@ class Augment(nn.Module):
             self.config.data.win,
             self.window,
             return_complex=True)
-        # random formant, pitch shifter
-        if formant_shift is not None or pitch_shift is not None:
-            # [B, T / S, num_code]
-            code = self.coder.from_stft(fft)
-            # [B, T / S, F]
-            filter_ = self.coder.envelope(code)
-            source = fft.transpose(1, 2) / (filter_ + 1e-7)
-            # [B, T / S, F]
-            if formant_shift is not None:
-                filter_ = self.interp(filter_, formant_shift, mode=mode)
-            if pitch_shift is not None:
-                source = self.interp(source, pitch_shift, mode=mode)
-            # [B, F, T / S]
-            fft = (source * filter_).transpose(1, 2)
         # PEQ
         if quality_power is not None:
             # alias
@@ -103,6 +92,26 @@ class Augment(nn.Module):
             filters = peaks * highpass * lowpass
             # [B, F, T / S]
             fft = fft * filters[..., None]
+            # debugging purpose
+            auxs.update({'peaks': peaks, 'highpass': highpass, 'lowpass': lowpass})
+        # random formant, pitch shifter
+        if formant_shift is not None or pitch_shift is not None:
+            # [B, T / S, num_code], normalize the fft values for accurate LPC analysis
+            code = self.coder.from_stft(fft / fft.abs().mean(dim=1)[:, None].clamp_min(1e-7))
+            # [B, T / S, F]
+            filter_ = self.coder.envelope(code)
+            source = fft.transpose(1, 2) / (filter_ + 1e-7)
+            # for debugging purpose
+            auxs.update({'code': code, 'filter': filter_, 'source': source})
+            # [B, T / S, F]
+            if formant_shift is not None:
+                filter_ = self.interp(filter_, formant_shift, mode=mode)
+            if pitch_shift is not None:
+                source = self.interp(source, pitch_shift, mode=mode)
+            # [B, F, T / S]
+            fft = (source * filter_).transpose(1, 2)
+            # debugging purpose
+            auxs.update({'ifilter': filter_, 'isource': source})
         # [B, T]
         out = torch.istft(
             fft,
@@ -111,8 +120,10 @@ class Augment(nn.Module):
             self.config.data.win,
             self.window)
         # max value normalization
-        max_val = out.max(dim=-1, keepdim=True).values
-        return out / max_val.clamp_min(1e-7)
+        out = out / out.max(dim=-1, keepdim=True).values.clamp_min(1e-7)
+        if return_aux:
+            return out, auxs
+        return out
 
     @staticmethod
     def complex_interp(inputs: torch.Tensor, *args, **kwargs) -> torch.Tensor:
