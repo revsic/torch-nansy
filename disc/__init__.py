@@ -2,6 +2,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .blocks import ResBlock
 from .config import Config
@@ -56,7 +57,7 @@ class Discriminator(nn.Module):
         # [B, spk, T]
         spk = self.branch(x)
         # [B, T], [B, spk, T]
-        return self.proj_out(x).squeeze(dim=1), spk
+        return self.proj_out(x).squeeze(dim=1), F.normalize(spk, dim=1)
 
     def save(self, path: str, optim: Optional[torch.optim.Optimizer] = None):
         """Save the models.
