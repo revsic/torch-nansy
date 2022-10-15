@@ -86,7 +86,7 @@ class Augment(nn.Module):
                 self.config.train.q_max / self.config.train.q_min) ** quality_power
             if gain is None:
                 # [B, num_peak]
-                gain = torch.ones_like(qualities[:, :-2])
+                gain = torch.zeros_like(qualities[:, :-2])
             # num_peak x ([B], [B])
             for i, (g, q) in enumerate(zip(gain.T, qualities.T)):
                 center = lowcut * (highcut / lowcut) ** (i / (num_peak - 1))
