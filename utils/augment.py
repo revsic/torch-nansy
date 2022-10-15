@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import torchaudio.functional as AF
 
 from .lpc import LinearPredictiveCoding
+from .peq import ParametricEqualizer
 
 from config import Config
 
@@ -22,9 +23,18 @@ class Augment(nn.Module):
         self.config = config
         self.coder = LinearPredictiveCoding(
             config.train.num_code, config.data.win, config.data.hop)
+        self.peq = ParametricEqualizer(
+            config.data.sr, config.data.win)
         self.register_buffer(
             'window',
             torch.hann_window(config.data.win),
+            persistent=False)
+        f_min, f_max, peaks = \
+            config.train.cutoff_lowpass, \
+            config.train.cutoff_highpass, config.train.num_peak
+        self.register_buffer(
+            'peak_centers',
+            f_min * (f_max / f_min) ** (torch.arange(peaks) / (peaks - 1)),
             persistent=False)
 
     def forward(self,
@@ -46,16 +56,16 @@ class Augment(nn.Module):
         Returns:
             [torch.float32; [B, T]], augmented.
         """
+        # [B, F, T / S], complex64
+        fft = torch.stft(
+            wavs,
+            self.config.data.fft,
+            self.config.data.hop,
+            self.config.data.win,
+            self.window,
+            return_complex=True)
         # random formant, pitch shifter
         if formant_shift is not None or pitch_shift is not None:
-            # [B, F, T / S], complex64
-            fft = torch.stft(
-                wavs,
-                self.config.data.fft,
-                self.config.data.hop,
-                self.config.data.win,
-                self.window,
-                return_complex=True)
             # [B, T / S, num_code]
             code = self.coder.from_stft(fft)
             # [B, T / S, F]
@@ -66,41 +76,40 @@ class Augment(nn.Module):
                 filter_ = self.interp(filter_, formant_shift, mode=mode)
             if pitch_shift is not None:
                 source = self.interp(source, pitch_shift, mode=mode)
-            # [B, T]
-            wavs = torch.istft(
-                (source * filter_).transpose(1, 2),
-                self.config.data.fft,
-                self.config.data.hop,
-                self.config.data.win,
-                self.window)
+            # [B, F, T / S]
+            fft = (source * filter_).transpose(1, 2)
         # PEQ
         if quality_power is not None:
             # alias
-            lowcut, highcut, num_peak, sr = \
-                self.config.train.cutoff_lowpass, \
-                self.config.train.cutoff_highpass, \
-                self.config.train.num_peak, \
-                self.config.data.sr
+            q_min, q_max = self.config.train.q_min, self.config.train.q_max
             # [B, num_peak + 2]
-            qualities = self.config.train.q_min * (
-                self.config.train.q_max / self.config.train.q_min) ** quality_power
+            q = q_min * (q_max / q_min) ** quality_power
             if gain is None:
                 # [B, num_peak]
-                gain = torch.zeros_like(qualities[:, :-2])
-            # num_peak x ([B], [B])
-            for i, (g, q) in enumerate(zip(gain.T, qualities.T)):
-                center = lowcut * (highcut / lowcut) ** (i / (num_peak - 1))
-                # [B, T]
-                wavs = [
-                    AF.equalizer_biquad(wav, sr, center, g.item(), q.item())
-                    for wav in wavs]
-            # [B, T], lowpass
-            wavs = torch.stack([
-                AF.lowpass_biquad(
-                    AF.highpass_biquad(wav, sr, highcut, hq.item()),
-                    sr, lowcut, lq.item())
-                for wav, (lq, hq) in zip(wavs, qualities[:, -2:])], dim=0)
-        return wavs
+                gain = torch.zeros_like(q[:, :-2])
+            # B
+            bsize, _ = wavs.shape
+            # [B, num_peak]
+            center = self.peak_centers[None].repeat(bsize, 1)
+            # [B, F]
+            peaks = torch.prod(
+                self.peq.peaking_equalizer(center, gain, q[:, :-2]), dim=1)
+            # [B, F]
+            lowpass = self.peq.low_shelving(
+                self.config.train.cutoff_lowpass, q[:, -2])
+            highpass = self.peq.high_shelving(
+                self.config.train.cutoff_highpass, q[:, -1])
+            # [B, F]
+            filters = peaks * highpass * lowpass
+            # [B, F, T / S]
+            fft = fft * filters[..., None]
+        # [B, T]
+        return torch.istft(
+            fft,
+            self.config.data.fft,
+            self.config.data.hop,
+            self.config.data.win,
+            self.window)
 
     @staticmethod
     def complex_interp(inputs: torch.Tensor, *args, **kwargs) -> torch.Tensor:
