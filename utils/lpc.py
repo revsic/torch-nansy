@@ -55,8 +55,11 @@ class LinearPredictiveCoding(nn.Module):
         Returns:
             [torch.float32; [..., windows // 2 + 1]], filters.
         """
-        return 1 / (torch.fft.rfft(
-            -F.pad(lpc, [1, 0], value=1.), self.windows, dim=-1).abs() + 1e-7)
+        denom = torch.fft.rfft(
+            -F.pad(lpc, [1, 0], value=1.), self.windows, dim=-1).abs()
+        # for preventing zero-division
+        denom[(denom.abs() - 1e-7) < 0] = 1.
+        return denom ** -1
 
     @staticmethod
     def autocorr(wavs: torch.Tensor) -> torch.Tensor:
@@ -82,7 +85,7 @@ class LinearPredictiveCoding(nn.Module):
         ## solve the first row
         # [..., 2]
         solutions = F.pad(
-            (-corrcoef[..., 1] / corrcoef[..., 0])[..., None],
+            (-corrcoef[..., 1] / corrcoef[..., 0].clamp_min(1e-7))[..., None],
             [1, 0], value=1.)
         # [...]
         extra = corrcoef[..., 0] + corrcoef[..., 1] * solutions[..., 1]
@@ -94,7 +97,7 @@ class LinearPredictiveCoding(nn.Module):
             lambda_value = (
                     -solutions[..., :k + 1]
                     * torch.flip(corrcoef[..., 1:k + 2], dims=[-1])
-                ).sum(dim=-1) / extra
+                ).sum(dim=-1) / extra.clamp_min(1e-7)
             # [..., k + 2]
             aug = F.pad(solutions, [0, 1])
             # [..., k + 2]
