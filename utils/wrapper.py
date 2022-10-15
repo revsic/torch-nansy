@@ -175,15 +175,15 @@ class TrainingWrapper:
         # [B], for shuffling
         indices = (np.arange(bsize) + start) % bsize
         # [B, T]
-        pos_real = torch.matmul(spk1[:, None], spk_real).squeeze(dim=1)
+        pos_real = torch.matmul(spk2[:, None], spk_real).squeeze(dim=1)
         neg_real = torch.matmul(spk2[indices, None], spk_real).squeeze(dim=1)
         # [B, T]
-        pos_fake = torch.matmul(spk1[:, None], spk_fake).squeeze(dim=1)
+        pos_fake = torch.matmul(spk2[:, None], spk_fake).squeeze(dim=1)
         neg_fake = torch.matmul(spk2[indices, None], spk_fake).squeeze(dim=1)
 
         # [B, T]
-        logits_real = d_real + (pos_real - neg_real)
-        logits_fake = d_fake + (pos_fake - neg_fake)
+        logits_real = d_real + pos_real - neg_real
+        logits_fake = d_fake + pos_fake - neg_fake
 
         if r1:
             # gradient penalty
@@ -265,10 +265,10 @@ class TrainingWrapper:
         # [B], for shuffling
         indices = (np.arange(bsize) + start) % bsize
         # [B, T]
-        pos = torch.matmul(spk1[:, None], spk).squeeze(dim=1)
+        pos = torch.matmul(spk2[:, None], spk).squeeze(dim=1)
         neg = torch.matmul(spk2[indices, None], spk).squeeze(dim=1)
         # [B, T]
-        logits = d_fake + (pos - neg)
+        logits = d_fake + pos - neg
         # masking if fail to construct negative pair
         logits = logits[sid != sid[indices]]
         disc = F.softplus(-logits).mean()
