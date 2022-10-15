@@ -40,7 +40,7 @@ class TrainConfig:
 
         # segment length
         sec = 1.47
-        self.seglen = int(sr * sec) // hop
+        self.seglen = int(sr * sec) // hop * hop
 
         # path config
         self.log = './log'
