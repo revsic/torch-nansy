@@ -135,6 +135,8 @@ class TrainingWrapper:
             rctor, _, _ = self.model.synthesize(
                 linguistic.transpose(1, 2), spk1, energy, yingram)
 
+        # for gradient penalty
+        mel.requires_grad_(True)
         # [B, T], [B, spk, T]
         d_real, spk_real = self.disc.forward(mel)
         # [B, T], [B, spk, T]
@@ -156,20 +158,26 @@ class TrainingWrapper:
         logits_real = d_real + (pos_real - neg_real)
         logits_fake = d_fake + (pos_fake - neg_fake)
 
+        # gradient penalty
+        r1_grads = torch.autograd.grad(
+            outputs=[d_real.sum()],
+            inputs=[mel],
+            create_graph=True,
+            only_inputs=True)[0]
+        # []
+        r1_penalty = r1_grads.square().sum(dim=[1, 2]).mean()
+
         # masking if fail to construct negative pair
         logits_real = logits_real[sid != sid[indices]]
         logits_fake = logits_fake[sid != sid[indices]]
-        disc_real = F.binary_cross_entropy_with_logits(
-            logits_real, torch.ones_like(logits_real))
-        disc_fake = F.binary_cross_entropy_with_logits(
-            logits_fake, torch.zeros_like(logits_fake))
-        loss = disc_real - disc_fake
+        disc_real = F.softplus(-logits_real).mean()
+        disc_fake = F.softplus(logits_fake).mean()
+        loss = disc_real - disc_fake + r1_penalty * 10
         losses = {
             'disc/loss': loss.item(),
+            'disc/r1': r1_penalty.item(),
             'disc/disc-real': disc_real.item(),
             'disc/disc-fake': disc_fake.item(),
-            'disc/logits-real': logits_real.mean().item(),
-            'disc/logits-fake': logits_fake.mean().item(),
             'disc/d-real': d_real.mean().item(),
             'disc/d-fake': d_fake.mean().item(),
             'disc/pos-real': pos_real.mean().item(),
@@ -232,14 +240,13 @@ class TrainingWrapper:
         logits = d_fake + (pos - neg)
         # masking if fail to construct negative pair
         logits = logits[sid != sid[indices]]
-        disc = F.binary_cross_entropy_with_logits(logits, torch.ones_like(logits))
+        disc = F.softplus(-logits).mean()
         # []
         loss = disc + rctor_loss
         losses = {
             'gen/loss': loss.item(),
             'gen/rctor': rctor_loss.item(),
             'gen/disc': disc.item(),
-            'gen/logits': logits.mean().item(),
             'gen/d-fake': d_fake.mean().item(),
             'gen/pos': pos.mean().item(),
             'gen/neg': neg[sid != sid[indices]].mean().item()}
