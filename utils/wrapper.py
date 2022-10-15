@@ -67,15 +67,9 @@ class TrainingWrapper:
         # [B], [B, seglen], [B, seglen]
         return sid, segment(s1, lengths[:, 0]), segment(s2, lengths[:, 1])
 
-    def augment(self, signal: torch.Tensor, fs: bool, ps: bool, peq: bool) -> torch.Tensor:
-        """Augment the speech.
-        Args:
-            signal: [torch.float32; [B, T]], segmented speech.
-            fs: whether use formant shift.
-            ps: whether use pitch shift.
-            peq: whether use parametric equalizer.
-        Returns:
-            [torch.float32; [B, T]], speech signal.
+    def sample_like(self, signal: torch.Tensor) -> List[torch.Tensor]:
+        """Sample augmentation parameters.
+
         """
         # [B]
         bsize, _ = signal.shape
@@ -86,20 +80,45 @@ class TrainingWrapper:
             shifts[flip] = shifts[flip] ** -1
             return shifts
         # sample shifts
-        formant_shift = sampler(self.config.train.formant_shift) if fs else None
-        pitch_shift = sampler(self.config.train.pitch_shift) if ps else None
+        fs = sampler(self.config.train.formant_shift)
+        ps = sampler(self.config.train.pitch_shift)
         # parametric equalizer
-        if peq:
-            peaks = self.config.train.num_peak
-            # quality factor
-            power = torch.rand(bsize, peaks + 2, device=signal.device)
-            # gains
-            g_min, g_max = self.config.train.g_min, self.config.train.g_max
-            gain = torch.rand(bsize, peaks, device=signal.device) * (g_max - g_min) + g_min
-        else:
-            power, gain = None, None
+        peaks = self.config.train.num_peak
+        # quality factor
+        power = torch.rand(bsize, peaks + 2, device=signal.device)
+        # gains
+        g_min, g_max = self.config.train.g_min, self.config.train.g_max
+        gain = torch.rand(bsize, peaks, device=signal.device) * (g_max - g_min) + g_min
+        return fs, ps, power, gain
+
+    def augment(self, signal: torch.Tensor, ps: bool = True) -> torch.Tensor:
+        """Augment the speech.
+        Args:
+            signal: [torch.float32; [B, T]], segmented speech.
+            ps: whether use pitch shift.
+        Returns:
+            [torch.float32; [B, T]], speech signal.
+        """
+        # B
+        bsize, _ = signal.shape
+        saves = None
+        while saves is None or len(saves) < bsize:
+            # [B] x 4
+            fshift, pshift, power, gain = self.sample_like(signal)
+            if not ps:
+                pshift = None
+            # [B, T]
+            out = self.aug.forward(signal, pshift, fshift, power, gain)
+            # for covering unexpected NaN
+            nan = out.isnan().any(dim=-1)
+            if not nan.all():
+                # save the outputs for not-nan inputs
+                if saves is None:
+                    saves = out[~nan]
+                else:
+                    saves = torch.cat([saves, out[~nan]], dim=0)
         # [B, T]
-        return self.aug.forward(signal, pitch_shift, formant_shift, power, gain)
+        return saves[:bsize]
 
     def loss_discriminator(self, sid: torch.Tensor, s1: torch.Tensor, s2: torch.Tensor) \
             -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
@@ -112,8 +131,8 @@ class TrainingWrapper:
         """
         with torch.no_grad():
             # augmentation
-            s1_f = self.augment(s1, fs=True, ps=True, peq=True)
-            s1_g = self.augment(s1, fs=True, ps=False, peq=True)
+            s1_f = self.augment(s1)
+            s1_g = self.augment(s1, ps=False)
             # _, [B, T', L]
             _, linguistic = self.model.wav2vec2.forward(s1_f)
             # [B, T', L]
@@ -172,7 +191,7 @@ class TrainingWrapper:
         logits_fake = logits_fake[sid != sid[indices]]
         disc_real = F.softplus(-logits_real).mean()
         disc_fake = F.softplus(logits_fake).mean()
-        loss = disc_real - disc_fake + r1_penalty * 10
+        loss = disc_real + disc_fake + r1_penalty * 10
         losses = {
             'disc/loss': loss.item(),
             'disc/r1': r1_penalty.item(),
@@ -200,8 +219,8 @@ class TrainingWrapper:
         """
         with torch.no_grad():
             # augmentation
-            s1_f = self.augment(s1, fs=True, ps=True, peq=True)
-            s1_g = self.augment(s1, fs=True, ps=False, peq=True)
+            s1_f = self.augment(s1)
+            s1_g = self.augment(s1, ps=False)
             # _, [B, T', L]
             _, linguistic = self.model.wav2vec2.forward(s1_f)
             # [B, T', L]
