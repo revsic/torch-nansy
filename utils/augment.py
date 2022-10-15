@@ -104,12 +104,15 @@ class Augment(nn.Module):
             # [B, F, T / S]
             fft = fft * filters[..., None]
         # [B, T]
-        return torch.istft(
+        out = torch.istft(
             fft,
             self.config.data.fft,
             self.config.data.hop,
             self.config.data.win,
             self.window)
+        # max value normalization
+        max_val = out.max(dim=-1, keepdim=True).values
+        return out / max_val.clamp_min(1e-7)
 
     @staticmethod
     def complex_interp(inputs: torch.Tensor, *args, **kwargs) -> torch.Tensor:
@@ -135,11 +138,16 @@ class Augment(nn.Module):
         Returns:
             [torch.complex64; [B, T, C]], interpolated.
         """
+        INTERPOLATION = {
+            torch.float32: F.interpolate,
+            torch.complex64: Augment.complex_interp}
+        assert inputs.dtype in INTERPOLATION, 'unsupported interpolation'
+        interp_fn = INTERPOLATION[inputs.dtype]
         # _, _, C
         _, _, channels = inputs.shape
         # B x [1, T, C x min(1., shifts)]
         interp = [
-            Augment.complex_interp(
+            interp_fn(
                 f[None], scale_factor=s.item(), mode=mode)[..., :channels]
             for f, s in zip(inputs, shifts)]
         # [B, T, C]
