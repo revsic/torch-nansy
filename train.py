@@ -90,6 +90,8 @@ class Trainer:
         step = epoch * len(self.loader)
         for epoch in tqdm.trange(epoch, self.config.train.epoch):
             with tqdm.tqdm(total=len(self.loader), leave=False) as pbar:
+                # random pairing before sampling
+                self.dataset.random_pairing(seed=epoch)
                 for it, bunch in enumerate(self.loader):
                     sid, s1, s2 = self.wrapper.wrap(
                         self.wrapper.random_segment(bunch))
