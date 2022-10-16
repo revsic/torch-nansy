@@ -167,6 +167,16 @@ class Nansy(nn.Module):
             dump['optim'] = optim.state_dict()
         torch.save(dump, path)
 
+    def load_(self, states: Dict[str, Any], optim: Optional[torch.optim.Optimizer] = None):
+        """Load from checkpoints inplace.
+        Args:
+            states: state dict.
+            optim: optimizer, if provided.
+        """
+        self.load_state_dict(states['model'])
+        if optim is not None:
+            optim.load_state_dict(states['optim'])
+
     @classmethod
     def load(cls, states: Dict[str, Any], optim: Optional[torch.optim.Optimizer] = None):
         """Load from checkpoints.
@@ -183,7 +193,5 @@ class Nansy(nn.Module):
             setattr(config, key, val)
         # construct
         nansy = cls(config)
-        nansy.load_state_dict(states['model'])
-        if optim is not None:
-            optim.load_state_dict(states['optim'])
+        nansy.load_(states, optim)
         return nansy

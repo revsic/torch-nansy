@@ -243,10 +243,10 @@ if __name__ == '__main__':
             f'{config.train.name}_{args.load_epoch}.ckpt')
         # load checkpoint
         ckpt = torch.load(ckpt_path)
-        model.load(ckpt, trainer.optim_g)
+        model.load_(ckpt, trainer.optim_g)
         # discriminator checkpoint
         ckpt_disc = torch.load(f'{ckpt_path}-disc')
-        disc.load(ckpt_disc, trainer.optim_d)
+        disc.load_(ckpt_disc, trainer.optim_d)
         print('[*] load checkpoint: ' + ckpt_path)
         # since epoch starts with 0
         args.load_epoch += 1
