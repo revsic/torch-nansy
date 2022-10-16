@@ -41,13 +41,15 @@ Checkpoint will be written on TrainConfig.ckpt, tensorboard summary on TrainConf
 tensorboard --logdir ./log
 ```
 
-[TODO] To inference model, run [inference.py](./inference.py)
+To inference model, run [inference.py](./inference.py)
 
 ```bash
 python inference.py \
-    --config ./ckpt/t1.json \
-    --ckpt ./ckpt/t1/t1_200.ckpt \
-    --wav /datasets/LJSpeech-1.1/audio/LJ048-0186.wav
+    --ckpt ./ckpt/libri100_73.ckpt \
+    --hifi-ckpt ./ckpt/hifigan/g_02500000 \
+    --hifi-config ./ckpt/hifigan/config.json \
+    --wav1 ./sample1.wav \
+    --wav2 ./sample2.wav
 ```
 
 [TODO] Pretrained checkpoints will be relased on [releases](https://github.com/revsic/torch-nansy/releases).
