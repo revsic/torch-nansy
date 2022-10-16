@@ -46,6 +46,7 @@ with torch.no_grad():
     print(f'[*] reconstruct {out.shape}')
     # vocoding
     out = hifigan.forward(out)
+    out = out / out.max(dim=-1).values.clamp_min(1e-7)[:, None]
     print(f'[*] done, {out.shape}')
 
     HOP = 256
@@ -63,6 +64,7 @@ with torch.no_grad():
     print(f'[*] vc {out.shape}')
 
     out = hifigan.forward(out)
+    out = out / out.max(dim=-1).values.clamp_min(1e-7)[:, None]
     print(f'[*] done, {out.shape}')
 
     HOP = 256
