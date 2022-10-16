@@ -55,16 +55,10 @@ python inference.py \
 To use pretrained model, download files and unzip it. Followings are sample script.
 
 ```py
-from config import Config
 from nansy import Nansy
 
-with open('t1.json') as f:
-    config = Config.load(json.load(f))
-
 ckpt = torch.load('t1_200.ckpt', map_location='cpu')
-
-nansy = nansy(config.model)
-nansy.load(ckpt)
+nansy = Nansy.load(ckpt)
 nansy.eval()
 ```
 
