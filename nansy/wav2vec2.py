@@ -33,13 +33,13 @@ class Wav2Vec2Wrapper(nn.Module):
         # warning can occurs since `Wav2Vec2Model` does not contain
         # quantization modules
         self.model = Wav2Vec2Model.from_pretrained(name)
-        self.eval()
 
         self.sr = sr
         self.resample = torchaudio.transforms.Resample(sr, 16000)
 
         self.speaker = speaker or Wav2Vec2Wrapper.SPEAKER
         self.linguistic = linguistic or Wav2Vec2Wrapper.LINGUISTIC
+        self.eval()
 
     @torch.no_grad()
     def forward(self,
@@ -92,10 +92,15 @@ class Wav2Vec2Wrapper(nn.Module):
         linguistic = output.hidden_states[self.linguistic]
         return speaker, linguistic
 
-    def train(self, _: bool = True):
+    def train(self, mode: bool = True):
         """Support only evaluation
         """
-        pass
+        if mode:
+            import warnings
+            warnings.warn('WhisperWrapper does not support training mode')
+        else:
+            # super call
+            super().train(False)
 
     def load_state_dict(self,
                         state_dict: Dict[str, torch.Tensor],
