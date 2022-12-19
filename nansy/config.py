@@ -10,9 +10,13 @@ class Config:
         # hertz to lag
         lmin, lmax = int(self.sr / self.yin_hmax), int(self.sr / self.yin_hmin)
         # for feeding synthesizer
+        # WARNING: since integer quantization in `midi_range`
+        # , it could occur the errors
+        #  ex. 984-channels Yingram in paper, 980 in this repo
         s_mmin, s_mmax = Yingram.midi_range(self.sr, lmin, lmax)
         # for sampling
-        delta, range_ = s_mmin - mmin, s_mmax - s_mmin + 1
+        bins = self.yin_bins
+        delta, range_ = (s_mmin - mmin) * bins, (s_mmax - s_mmin + 1) * bins
         return delta, range_, {
             'yin-midi-min': mmin, 'yin-midi-max': mmax,
             'syn-midi-min': s_mmin, 'syn-midi-max': s_mmax}
@@ -29,6 +33,8 @@ class Config:
 
         self.yin_hmin = 25.11   # 878 lag, 20midi, +15 from lmin
         self.yin_hmax = 430.19  #  51 lag, 68midi, 49-channel
+
+        self.yin_bins = 20  # the number of the bins per semitone
 
         # mel-spectrogram
         self.mel_strides = 256
