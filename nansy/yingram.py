@@ -36,6 +36,7 @@ class Yingram(nn.Module):
                  windows: int,
                  lmin: int,
                  lmax: int,
+                 bins: int,
                  sr: int = 16000):
         """Initializer.
         Args:
@@ -43,12 +44,14 @@ class Yingram(nn.Module):
             windows: width of the window.
             lmin, lmax: bounds of time-lag,
                 it could be `sr / fmax` or `sr / fmin`.
+            bins: the number of the bins per semitone.
             sr: sample rate, default 16khz.
         """
         super().__init__()
         self.strides = strides
         self.windows = windows
         self.lmin, self.lmax = lmin, lmax
+        self.bins = bins
         self.sr = sr
         # midi range
         self.mmin, self.mmax = Yingram.midi_range(sr, lmin, lmax)
@@ -70,7 +73,7 @@ class Yingram(nn.Module):
             audio: [torch.float32; [B, T]], audio signal, [-1, 1]-ranged.
             audiolen: [torch.long; [B]], length of signals.
         Returns:
-            [torch.float32; [B, T / `strides`, M - m + 1]], yingram,
+            [torch.float32; [B, T / `strides`, `bins` x (M - m + 1)]], yingram,
                 where M = l2m(`lmin`), m = l2m(`max`)
                       l2m(l) = 12 x log2(`sr` / (440 * l)) + 69
         """
@@ -106,12 +109,13 @@ class Yingram(nn.Module):
         cumdiff = cumdiff * torch.arange(1, tau_max, device=cumdiff.device)
         # [B, T / strides, lmax], cumulative mean normalized difference
         cumdiff = F.pad(cumdiff, [1, 0], value=1.)
-        # [mmax - mmin + 1]
+        # [bins x (mmax - mmin + 1)]
+        steps = self.bins ** -1
         lags = m2l(
             self.sr,
-            torch.arange(self.mmin, self.mmax + 1, device=cumdiff.device))
+            torch.arange(self.mmin, self.mmax + 1, step=steps, device=cumdiff.device))
         lceil, lfloor = lags.ceil().long(), lags.floor().long()
-        # [B, T / strides, mmax - mmin + 1], yingram
+        # [B, T / strides, bins x (mmax - mmin + 1)], yingram
         return (
             (cumdiff[..., lceil] - cumdiff[..., lfloor]) * (lags - lfloor)
             / (lceil - lfloor) + cumdiff[..., lfloor])
