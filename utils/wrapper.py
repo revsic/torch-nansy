@@ -202,12 +202,12 @@ class TrainingWrapper:
             'disc/r1': r1_penalty.item(),
             'disc/disc-real': disc_real.item(),
             'disc/disc-fake': disc_fake.item(),
-            'disc/d-real': d_real.mean().item(),
-            'disc/d-fake': d_fake.mean().item(),
-            'disc/pos-real': pos_real.mean().item(),
-            'disc/pos-fake': pos_fake.mean().item(),
-            'disc/neg-real': neg_real[sid != sid[indices]].mean().item(),
-            'disc/neg-fake': neg_fake[sid != sid[indices]].mean().item()}
+            'disc-aux/d-real': d_real.mean().item(),
+            'disc-aux/d-fake': d_fake.mean().item(),
+            'disc-aux/pos-real': pos_real.mean().item(),
+            'disc-aux/pos-fake': pos_fake.mean().item(),
+            'disc-aux/neg-real': neg_real[sid != sid[indices]].mean().item(),
+            'disc-aux/neg-fake': neg_fake[sid != sid[indices]].mean().item()}
         # for visualization
         # [B, T, Y] -> [B, T, Y // bins] -> [B, Y // bins, T]
         yingram = F.interpolate(
@@ -263,20 +263,37 @@ class TrainingWrapper:
         # masking if fail to construct negative pair
         logits = logits[sid != sid[indices]]
         disc = F.softplus(-logits).mean()
+
+        # [B, B], metric purpose
+        confusion = torch.matmul(spk1, spk2.T)
+        mask = (sid[:, None] == sid) * (
+            1 - torch.eye(bsize, device=self.device))
+        # placeholder
+        metric_pos, metric_neg = None, None
+        if mask.sum() > 0:
+            metric_pos = (confusion * mask).mean().item()
+        if (1 - mask).sum() > 0:
+            metric_neg = (confusion * (1 - mask)).mean().item()
+
         # []
         loss = disc + rctor_loss
         losses = {
             'gen/loss': loss.item(),
             'gen/rctor': rctor_loss.item(),
             'gen/disc': disc.item(),
-            'gen/d-fake': d_fake.mean().item(),
-            'gen/pos': pos.mean().item(),
-            'gen/neg': neg[sid != sid[indices]].mean().item()}
+            'gen-aux/d-fake': d_fake.mean().item(),
+            'gen-aux/pos': pos.mean().item(),
+            'gen-aux/neg': neg[sid != sid[indices]].mean().item()}
         # for visualization
         # [B, T, Y] -> [B, T, Y // bins] -> [B, Y // bins, T]
         yingram = F.interpolate(
             yingram.transpose(1, 2),
             scale_factor=self.config.model.yin_bins ** -1, mode='linear').transpose(1, 2)
+        # conditional metric
+        if metric_pos is not None:
+            losses['metric/pos'] = metric_pos
+        if metric_neg is not None:
+            losses['metric/neg'] = metric_neg
         return loss, losses, {
             'yingram': yingram.cpu().detach().numpy(),
             'mel': mel.cpu().detach().numpy(),
