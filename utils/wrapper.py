@@ -215,6 +215,11 @@ class TrainingWrapper:
             'disc/pos-fake': pos_fake.mean().item(),
             'disc/neg-real': neg_real[sid != sid[indices]].mean().item(),
             'disc/neg-fake': neg_fake[sid != sid[indices]].mean().item()}
+        # for visualization
+        # [B, T, Y] -> [B, T, Y // bins] -> [B, Y // bins, T]
+        yingram = F.interpolate(
+            yingram.transpose(1, 2),
+            scale_factor=self.config.model.yin_bins ** -1, mode='linear').transpose(1, 2)
         return loss, losses, {
             'yingram': yingram.cpu().detach().numpy(),
             'mel': mel.cpu().detach().numpy(),
@@ -281,6 +286,11 @@ class TrainingWrapper:
             'gen/d-fake': d_fake.mean().item(),
             'gen/pos': pos.mean().item(),
             'gen/neg': neg[sid != sid[indices]].mean().item()}
+        # for visualization
+        # [B, T, Y] -> [B, T, Y // bins] -> [B, Y // bins, T]
+        yingram = F.interpolate(
+            yingram.transpose(1, 2),
+            scale_factor=self.config.model.yin_bins ** -1, mode='linear').transpose(1, 2)
         return loss, losses, {
             'yingram': yingram.cpu().detach().numpy(),
             'mel': mel.cpu().detach().numpy(),
