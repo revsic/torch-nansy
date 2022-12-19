@@ -141,23 +141,16 @@ class TrainingWrapper:
             # augmentation
             s1_f = self.augment(s1)
             s1_g = self.augment(s1, ps=False)
-            # _, [B, T', L]
+            # _, [B, S, 1024]
             _, linguistic = self.model.wav2vec2.forward(s1_f)
-            # [B, T', L]
-            spk1, _ = self.model.wav2vec2.forward(s1)
-            spk2, _ = self.model.wav2vec2.forward(s2)
-            # [B, mel, T]
-            mel = self.model.melspec.forward(s1)
-            # [B, T]
-            energy = mel.mean(dim=1)
-            # [B, Yf, T']
-            yingram_full = self.model.yingram.forward(s1_g).transpose(1, 2)
-            # [B, Y, T']
-            d, r = self.model.yin_delta, self.model.yin_range
-            yingram = yingram_full[:, d:d + r]
-            # [B, spk]
-            spk1 = self.model.verifier(spk1.transpose(1, 2))
-            spk2 = self.model.verifier(spk2.transpose(1, 2))
+            # [B, ver_out_channels]
+            _, spk1 = self.model.analyze_wav2vec2(s1)
+            _, spk2 = self.model.analyze_wav2vec2(s2)
+            # [B, T / mel_strides]
+            energy, mel = self.model.analyze_energy(s1)
+            # [B, Y, T / yin_strides]
+            yingram = self.model.sample_yingram(
+                self.model.analyze_yingram(s1_g))
             # [B, mel, T]
             rctor, _, _ = self.model.synthesize(
                 linguistic.transpose(1, 2), spk1, energy, yingram)
@@ -238,23 +231,16 @@ class TrainingWrapper:
             # augmentation
             s1_f = self.augment(s1)
             s1_g = self.augment(s1, ps=False)
-            # _, [B, T', L]
+            # [B, S, 1024]
             _, linguistic = self.model.wav2vec2.forward(s1_f)
-            # [B, T', L]
-            spk1, _ = self.model.wav2vec2.forward(s1)
-            spk2, _ = self.model.wav2vec2.forward(s2)
-            # [B, mel, T]
-            mel = self.model.melspec.forward(s1)
-            # [B, T]
-            energy = mel.mean(dim=1)
-            # [B, Yf, T']
-            yingram_full = self.model.yingram.forward(s1_g).transpose(1, 2)
-            # [B, Y, T']
-            d, r = self.model.yin_delta, self.model.yin_range
-            yingram = yingram_full[:, d:d + r]
-        # [B, spk]
-        spk1 = self.model.verifier(spk1.transpose(1, 2))
-        spk2 = self.model.verifier(spk2.transpose(1, 2))
+            # [B, T / mel_strides]
+            energy, mel = self.model.analyze_energy(s1)
+            # [B, Y, T / yin_strides]
+            yingram = self.model.sample_yingram(
+                self.model.analyze_yingram(s1_g))
+        # [B, ver_out_channels]
+        _, spk1 = self.model.analyze_wav2vec2(s1)
+        _, spk2 = self.model.analyze_wav2vec2(s2)
         # [B, mel, T]
         rctor, filter_, source = self.model.synthesize(
             linguistic.transpose(1, 2), spk1, energy, yingram)

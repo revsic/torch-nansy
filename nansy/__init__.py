@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -72,39 +72,93 @@ class Nansy(nn.Module):
         self.synth_src = synth_fn(self.yin_range)
         self.synth_fil = synth_fn(Wav2Vec2Wrapper.OUT_CHANNELS)
 
-    def analyze(self,
-                audio: torch.Tensor,
-                audiolen: Optional[torch.Tensor] = None) \
-            -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Encode the features from audio.
+    def analyze_wav2vec2(self, audio: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Analyze the Wav2Vec2.0-relative features.
         Args:
             audio: [torch.float32; [B, T]], audio signal, [-1, 1]-ranged.
-            audiolen: [torch.long; [B]], length of the audio.
         Returns:
-            linguistic: [torch.float32; [B, L, T']], linguistic features.
-            spk: [torch.float32; [B, S]], speaker embedding.
-            energy: [torch.float32; [B, T]], energy values.
-            yingram_full: [torch.float32; [B, Yf, T'']], full pitch-relative features.
-            yingram: [torch.float32; [B, Y, T'']], part of yingram, synthesizing purpose.
-                where L = `Wav2Vec2Wrapper.OUT_CHANNELS`
-                      S = `config.ver_out_channels`
-                      Yf = `(Nansy.yingram.mmax - Nansy.yingram.mmin + 1) x config.yin_bins`
-                      Y = `Nansy.yin_range`.
+            linguistic: [torch.float32; [B, 1024, S]], linguistic features.
+            spk: [torch.float32; [B, ver_out_channels]], speaker embedding.
         """
-        # [B, T', L], [B, T', L]
-        spk, linguistic = self.wav2vec2.forward(audio, audiolen)
-        # [B, S]
+        # [B, S, 1024], [B, S, 1024]
+        spk, linguistic = self.wav2vec2.forward(audio)
+        # [B, ver_out_channels]
         spk = self.verifier.forward(spk.transpose(1, 2))
+        return linguistic.transpose(1, 2), spk
+
+    def analyze_energy(self, audio: torch.Tensor) -> torch.Tensor:
+        """Analyze the energy of spectrogram.
+        Args:
+            audio: [torch.float32; [B, T]], audio signal, [-1, 1]-ranged.
+        Returns:
+            energy: [torch.float32; [B, T // mel_strides]], energy values.
+            mel: [torch.float32; [B, mel_filters, T // mel_strides]], mel-spectrogram.
+        """
         # [B, mel, T]
         mel = self.melspec.forward(audio)
         # [B, T]
-        energy = mel.mean(dim=1)
-        # [B, Yf, T']
-        yingram_full = self.yingram.forward(audio).transpose(1, 2)
-        # [B, Y, T']
+        return mel.mean(dim=1), mel
+
+    def analyze_yingram(self, audio: torch.Tensor) -> torch.Tensor:
+        """Analyze the yingram.
+        Args:
+            audio: [torch.float32; [B, T]], audio signal, [-1, 1]-ranged.
+        Returns:
+            [torch.float32; [B, Y, T // yin_strides]], yingram,
+                where Y = yin_bins x (mmax - mmin + 1)
+        """
+        return self.yingram.forward(audio).transpose(1, 2)
+
+    def sample_yingram(self,
+                       yingram: torch.Tensor,
+                       start: Optional[Union[int, torch.Tensor]] = None,
+                       semitone: bool = False) \
+            -> torch.Tensor:
+        """Sample the yingram for synthesizer.
+        Args:
+            yingram: [torch.float32; [B, Y, T // yin_strides]], yingram,
+                where Y = yin_bins x (mmax - mmin + 1)
+            start: [torch.long; [B]], start position.
+            semitone: treat the `start` as relative semitone steps
+                otherwise absolute start index.
+        Returns:
+            [torch.float32; [B, Y', T // yin_strides]], sampled yingram,
+                where Y' = yin_bins x (lmax - lmin + 1)
+        """
         d, r = self.yin_delta, self.yin_range
-        yingram = yingram_full[:, d:d + r]
-        return linguistic.transpose(1, 2), spk, energy, yingram_full, yingram
+        if start is None:
+            return yingram[:, d:d + r]
+        # semitone conversion
+        if semitone:
+            start = d + start * self.config.yin_bins
+        # sampling
+        if isinstance(start, int):
+            return yingram[:, start:start + r]
+        return torch.stack([y[s:s + r] for y, s in zip(yingram, start)], dim=0)
+
+    def analyze(self, audio: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """Encode the features from audio.
+        Args:
+            audio: [torch.float32; [B, T]], audio signal, [-1, 1]-ranged.
+        Returns:
+            analyzed features
+                linguistic: [torch.float32; [B, 1024, S]], linguistic features.
+                spk: [torch.float32; [B, ver_out_channels]], speaker embedding.
+                energy: [torch.float32; [B, T // mel_strides]], energy values.
+                yingram: [torch.float32; [B, Y, T // yin_strides]], full pitch-relative features.
+                    where Y = yin_bins x (mmax - mmin + 1)
+        """
+        # [B, 1024, S], [B, ver_out_channels]
+        linguistic, spk = self.analyze_wav2vec2(audio)
+        # [B, T // mel_strides]
+        energy, _ = self.analyze_energy(audio)
+        # [B, Y, T // yin_strides]
+        yingram = self.analyze_yingram(audio)
+        return {
+            'linguistic': linguistic,
+            'spk': spk,
+            'energy': energy,
+            'yingram': yingram}
 
     def synthesize(self,
                    linguistic: torch.Tensor,
@@ -114,16 +168,14 @@ class Nansy(nn.Module):
             -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Synthesize the mel-spectrogram.
         Args:
-            linguistic: [torch.float32; [B, L, T']], linguistic features.
-            spk: [torch.float32; [B, S]], speaker embedding.
-            energy: [torch.float32; [B, T]], energy values.
-            yingram: [torch.float32; [B, Y, T'']], pitch-relative features,
-                where L = `Wav2Vec2Wrapper.OUT_CHANNELS`
-                      S = `config.ver_out_channels`
-                      Y = `Nansy.yin_range`.
+            linguistic: [torch.float32; [B, 1024, S]], linguistic features.
+            spk: [torch.float32; [B, ver_out_channels]], speaker embedding.
+            energy: [torch.float32; [B, T / mel_strides]], energy values.
+            yingram: [torch.float32; [B, yin_range, T / yin_strides]],
+                pitch-relative features.
         Returns:
-            [torch.float32; [B, M, T]], synthesized mel-spectrogram, filter and source.
-                where M = `config.mel_filters`.
+            [torch.float32; [B, mel_filters, T / mel_strides]],
+                synthesized mel-spectrogram, filter and source.
         """
         # [B, mel, T]
         filter_ = self.synth_fil.forward(linguistic, energy, spk)
@@ -131,31 +183,27 @@ class Nansy(nn.Module):
         source = self.synth_src.forward(yingram, energy, spk)
         return filter_ + source, filter_, source
 
-    def forward(self,
-                audio: torch.Tensor,
-                audiolen: Optional[torch.Tensor] = None) \
+    def forward(self, audio: torch.Tensor) \
             -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Reconstruct the audio.
         Args:
             audio: [torch.float32; [B, T]], audio signal, [-1, 1]-ranged.
-            audiolen: [torch.long; [B]], length of the audio.
         Returns:
-            synth: [torch.float32; [B, mel, T']], mel-spectrogram.
-                where T' = T / `Config.mel_strides`.
+            synth: [torch.float32; [B, mel_filters, T / mel_strides]],
+                mel-spectrogram.
             aux: intermediate features, reference return values of `Nansy.analyze`.
         """
-        linguistic, spk, energy, yingram_full, yingram = self.analyze(audio, audiolen)
+        feat = self.analyze(audio)
         # [B, mel, T']
-        synth, filter_, source = self.synthesize(linguistic, spk, energy, yingram)
-        return synth, {
-            'linguistic': linguistic,
-            'spk': spk,
-            'energy': energy,
-            'yingram_full': yingram_full,
-            'yingram': yingram,
-            'synth': synth,
-            'filter': filter_,
-            'source': source}
+        synth, filter_, source = self.synthesize(
+            feat['linguistic'],
+            feat['spk'],
+            feat['energy'],
+            self.sample_yingram(feat['yingram']))
+        # add features
+        feat['filter'] = filter_
+        feat['source'] = source
+        return synth, feat
 
     def save(self, path: str, optim: Optional[torch.optim.Optimizer] = None):
         """Save the models.
