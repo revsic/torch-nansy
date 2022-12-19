@@ -91,7 +91,7 @@ class TrainingWrapper:
         power = torch.rand(bsize, peaks + 2, device=signal.device)
         # gains
         g_min, g_max = self.config.train.g_min, self.config.train.g_max
-        gain = torch.rand(bsize, peaks, device=signal.device) * (g_max - g_min) + g_min
+        gain = torch.rand(bsize, peaks + 2, device=signal.device) * (g_max - g_min) + g_min
         return fs, ps, power, gain
 
     def augment(self, signal: torch.Tensor, ps: bool = True) -> torch.Tensor:
