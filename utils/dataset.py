@@ -1,13 +1,27 @@
-import argparse
 import os
 from copy import deepcopy
 from typing import Any, Callable, List, Optional, Tuple, Union
 
 import numpy as np
 
-import speechset
-from speechset.datasets import DataReader
+from speechset.datasets import ConcatReader, DataReader
 from speechset.speeches.speechset import SpeechSet
+
+ 
+class MultipleReader(ConcatReader):
+    """Wrapping concat reader for paired-dataset supports.
+    """
+    def __init__(self, readers: List[DataReader]):
+        """Initializer.
+        Args:
+            readers: list of data readers.
+        """
+        super().__init__(readers)
+        indices = np.cumsum([0] + [len(speakers) for speakers in self.speakers_])
+        self.transcript = {
+            path: (sid + start, text)
+            for reader, start in zip(self.readers, indices)
+            for path, (sid, text) in reader.transcript.items()}
 
 
 class PairedDataset(SpeechSet):
@@ -28,7 +42,7 @@ class PairedDataset(SpeechSet):
         # group with sid
         for path in iters:
             # temp, hack of LibriTTS reader, for optimization
-            key = os.path.basename(path).replace('.wav', '')
+            key, _ = os.path.splitext(os.path.basename(path))
             sid, _ = self.reader.transcript[key]
             if sid not in self.groups:
                 self.groups[sid] = []
@@ -135,54 +149,3 @@ class PairedDataset(SpeechSet):
         speech2 = np.stack([
             np.pad(signal, [0, len2 - len(signal)]) for _, _, signal in bunch])
         return sids, lengths, speech1, speech2
-
-
-class DumpedLibriTTS(speechset.utils.DumpDataset):
-    """Dumped libritts support.
-    """
-    def __init__(self, data_dir: str):
-        """Initializer.
-        Args:
-            data_dir: path to the dumped dataset.
-        """
-        super().__init__(DumpedLibriTTS.IDWrappedAcoustic, data_dir)
-
-    class IDWrappedAcoustic(speechset.utils.IDWrapper):
-        """ID-wrapper for DumpDataset support.
-        """
-        def __init__(self, *args, **kwargs):
-            """Pass the acoustic dataset to the IDWrapper
-            """
-            super().__init__(speechset.AcousticDataset(*args, **kwargs))
-
-
-def dump(data_dir: str,
-         out_dir: str,
-         num_proc: int,
-         config: Optional[speechset.Config] = None) -> int:
-    """Dump preprocessed LibriTTS datasets.
-    Args:
-        data_dir: dataset directory.
-        out_dir: path to the dumped dataset.
-        num_proc: the number of the processor.
-        config: dataset configuration, if provided.
-    Returns:
-        dataset lengths.
-    """
-    config = config or speechset.Config()
-    libri = speechset.datasets.LibriTTS(data_dir)
-    # construct multi speaker
-    acoustic = speechset.utils.IDWrapper(
-        speechset.AcousticDataset(libri, config))
-    # dump
-    return speechset.utils.mp_dump(acoustic, out_dir, num_proc)
-
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--data-dir', default=None)
-    parser.add_argument('--out-dir', default=None)
-    parser.add_argument('--num-proc', defulat=4, type=int)
-    args = parser.parse_args()
-
-    dump(args.data_dir, args.out_dir, args.num_proc)
