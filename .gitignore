@@ -7,3 +7,6 @@ test.ipynb
 
 # inferenced
 *.wav
+
+# datasets
+datasets

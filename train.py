@@ -223,7 +223,7 @@ if __name__ == '__main__':
 
     # prepare datasets
     dataset = PairedDataset(
-        speechset.utils.DumpReader('./datasets/dumped'))
+        speechset.utils.DumpReader(args.data_dir))
 
     # model definition
     device = torch.device(
