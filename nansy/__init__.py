@@ -51,6 +51,7 @@ class Nansy(nn.Module):
             config.yin_windows,
             config.yin_lmin,
             config.yin_lmax,
+            config.yin_bins,
             config.sr)
         # compute channels
         self.yin_delta, self.yin_range, _ = config.yingram_channels()
@@ -87,7 +88,7 @@ class Nansy(nn.Module):
             yingram: [torch.float32; [B, Y, T'']], part of yingram, synthesizing purpose.
                 where L = `Wav2Vec2Wrapper.OUT_CHANNELS`
                       S = `config.ver_out_channels`
-                      Yf = `Nansy.yingram.mmax - Nansy.yingram.mmin + 1`
+                      Yf = `(Nansy.yingram.mmax - Nansy.yingram.mmin + 1) x config.yin_bins`
                       Y = `Nansy.yin_range`.
         """
         # [B, T', L], [B, T', L]
