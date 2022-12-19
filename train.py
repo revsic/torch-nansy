@@ -222,7 +222,8 @@ if __name__ == '__main__':
         os.makedirs(ckpt_path)
 
     # prepare datasets
-    libritts = PairedDataset(speechset.datasets.LibriTTS(args.data_dir))
+    dataset = PairedDataset(
+        speechset.utils.DumpReader('./datasets/dumped'))
 
     # model definition
     device = torch.device(
@@ -233,7 +234,7 @@ if __name__ == '__main__':
     disc = Discriminator(config.disc)
     disc.to(device)
 
-    trainer = Trainer(model, disc, libritts, config, device)
+    trainer = Trainer(model, disc, dataset, config, device)
 
     # loading
     if args.load_epoch > 0:
