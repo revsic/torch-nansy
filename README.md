@@ -16,21 +16,27 @@ git submodule init --update
 cd hifi-gan; patch -p0 < ../hifi-gan-diff
 ```
 
-Download LibriTTS dataset from [openslr](https://openslr.org/60/)
+Download LibriTTS[[openslr:60](https://www.openslr.org/60/)], LibriSpeech[[openslr:12](https://www.openslr.org/12)] and VCTK[[official](https://datashare.ed.ac.uk/handle/10283/2651)] datasets.
+
+Dump the dataset for training.
+
+```
+python -m speechset.utils.dump \
+    --out-dir ./datasets/dumped
+```
 
 To train model, run [train.py](./train.py)
 
 ```bash
 python train.py \
-    --data-dir /datasets/LibriTTS/train-clean-360
+    --data-dir ./datasets/dumped
 ```
 
 To start to train from previous checkpoint, --load-epoch is available.
 
 ```bash
 python train.py \
-    --data-dir /datasets/LibriTTS/train-clean-360 \
-    --from-dump \
+    --data-dir ./datasets/dumped \
     --load-epoch 20 \
     --config ./ckpt/t1.json
 ```
@@ -48,8 +54,8 @@ python inference.py \
     --ckpt ./ckpt/libri100_73.ckpt \
     --hifi-ckpt ./ckpt/hifigan/g_02500000 \
     --hifi-config ./ckpt/hifigan/config.json \
-    --wav1 ./sample1.wav \
-    --wav2 ./sample2.wav
+    --context ./sample1.wav \
+    --identity ./sample2.wav
 ```
 
 [TODO] Pretrained checkpoints will be relased on [releases](https://github.com/revsic/torch-nansy/releases).
