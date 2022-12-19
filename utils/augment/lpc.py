@@ -58,8 +58,7 @@ class LinearPredictiveCoding(nn.Module):
         denom = torch.fft.rfft(
             -F.pad(lpc, [1, 0], value=1.), self.windows, dim=-1).abs()
         # for preventing zero-division
-        denom[(denom.abs() - 1e-7) < 0] = 1.
-        return denom ** -1
+        return denom.clamp_min(1e-5) ** -1
 
     @staticmethod
     def autocorr(wavs: torch.Tensor) -> torch.Tensor:
