@@ -52,7 +52,7 @@ class Augment(nn.Module):
             formant_shift: [torch.float32; [B]], formant shifts.
             quality_power: [torch.float32; [B, num_peak + 2]],
                 exponents of quality factor, for PEQ.
-            gain: [torch.float32; [B, num_peak]], gain in decibel.
+            gain: [torch.float32; [B, num_peak + 2]], gain in decibel.
             mode: interpolation mode, `linear` or `nearest`.
             return_aux: return the auxiliary values if True, only for debugging purpose.
         Returns:
@@ -82,12 +82,12 @@ class Augment(nn.Module):
             center = self.peak_centers[None].repeat(bsize, 1)
             # [B, F]
             peaks = torch.prod(
-                self.peq.peaking_equalizer(center, gain, q[:, :-2]), dim=1)
+                self.peq.peaking_equalizer(center, gain[:, :-2], q[:, :-2]), dim=1)
             # [B, F]
             lowpass = self.peq.low_shelving(
-                self.config.train.cutoff_lowpass, q[:, -2])
+                self.config.train.cutoff_lowpass, gain[:, -2], q[:, -2])
             highpass = self.peq.high_shelving(
-                self.config.train.cutoff_highpass, q[:, -1])
+                self.config.train.cutoff_highpass, gain[:, -1], q[:, -1])
             # [B, F]
             filters = peaks * highpass * lowpass
             # [B, F, T / S]
