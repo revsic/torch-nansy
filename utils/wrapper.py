@@ -196,8 +196,8 @@ class TrainingWrapper:
         logits_real = logits_real[sid != sid[indices]]
         logits_fake = logits_fake[sid != sid[indices]]
         disc_real = F.softplus(-logits_real).mean()
-        disc_fake = -F.softplus(-logits_fake).mean()
-        loss = disc_real + disc_fake + r1_penalty * 10
+        disc_fake = F.softplus(-logits_fake).mean()
+        loss = disc_real - disc_fake + r1_penalty * 10
         losses = {
             'disc/loss': loss.item(),
             'disc/r1': r1_penalty.item(),
