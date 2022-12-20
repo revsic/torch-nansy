@@ -143,6 +143,8 @@ class TrainingWrapper:
             s1_g = self.augment(s1, ps=False)
             # _, [B, S, 1024]
             _, linguistic = self.model.wav2vec2.forward(s1_f)
+            # [B, 1024, S]
+            linguistic = linguistic.transpose(1, 2)
             # [B, ver_out_channels]
             _, spk1 = self.model.analyze_wav2vec2(s1)
             _, spk2 = self.model.analyze_wav2vec2(s2)
@@ -232,6 +234,8 @@ class TrainingWrapper:
             s1_g = self.augment(s1, ps=False)
             # [B, S, 1024]
             _, linguistic = self.model.wav2vec2.forward(s1_f)
+            # [B, 1024, S]
+            linguistic = linguistic.transpose(1, 2)
             # [B, T / mel_strides]
             energy, mel = self.model.analyze_energy(s1)
             # [B, Y, T / yin_strides]
