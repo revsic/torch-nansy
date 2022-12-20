@@ -152,8 +152,7 @@ class TrainingWrapper:
             yingram = self.model.sample_yingram(
                 self.model.analyze_yingram(s1_g))
             # [B, mel, T]
-            rctor, _, _ = self.model.synthesize(
-                linguistic.transpose(1, 2), spk1, energy, yingram)
+            rctor, _, _ = self.model.synthesize(linguistic, spk1, energy, yingram)
 
         # for gradient penalty
         mel.requires_grad_(r1)
@@ -242,8 +241,7 @@ class TrainingWrapper:
         _, spk1 = self.model.analyze_wav2vec2(s1)
         _, spk2 = self.model.analyze_wav2vec2(s2)
         # [B, mel, T]
-        rctor, filter_, source = self.model.synthesize(
-            linguistic.transpose(1, 2), spk1, energy, yingram)
+        rctor, filter_, source = self.model.synthesize(linguistic, spk1, energy, yingram)
         # []
         rctor_loss = (mel - rctor).abs().mean()
 
