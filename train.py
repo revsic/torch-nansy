@@ -153,6 +153,10 @@ class Trainer:
 
             losses = {
                 key: [] for key in {**losses_d, **losses_g}}
+            COND_KEYS = ['metric/pos', 'metric/neg']
+            for key in COND_KEYS:
+                losses[key] = []
+
             with torch.no_grad():
                 for bunch in self.testloader:
                     sid, s1, s2 = self.wrapper.wrap(
