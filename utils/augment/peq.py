@@ -36,28 +36,26 @@ class ParametricEqualizer(nn.Module):
         Args:
             cutoff: cutoff frequency.
             gain: [torch.float32; [...]], boost of attenutation in decibel.
-            q: [torch.float32; [B]], quality factor.
+            q: [torch.float32; [...]], quality factor.
         Returns:
-            [torch.float32; [B, windows // 2 + 1]], frequency filter.
+            [torch.float32; [..., windows // 2 + 1]], frequency filter.
         """
-        bsize, = q.shape
         # ref: torchaudio.functional.lowpass_biquad
         w0 = 2 * np.pi * cutoff / self.sr
         cos_w0 = np.cos(w0)
         # [B]
         alpha = np.sin(w0) / 2 / q
-        cos_w0 = torch.tensor(
-            [np.cos(w0)] * bsize, dtype=torch.float32, device=q.device)
+        cos_w0 = torch.full_like(alpha, np.cos(w0))
         A = (gain / 40. * np.log(10)).exp()
-        # [B], fir
+        # [...], fir
         b0 = A * ((A + 1) - (A - 1) * cos_w0 + 2 * A.sqrt() * alpha)
         b1 = 2 * A * ((A - 1) - (A + 1) * cos_w0)
         b2 = A * ((A + 1) - (A - 1) * cos_w0 - 2 * A.sqrt() * alpha)
-        # [B], iir
+        # [...], iir
         a0 = (A + 1) + (A - 1) * cos_w0 + 2 * A.sqrt() * alpha
         a1 = -2 * ((A - 1) + (A + 1) * cos_w0)
         a2 = (A + 1) + (A - 1) * cos_w0 - 2 * A.sqrt() * alpha
-        # [B, windows // 2 + 1]
+        # [..., windows // 2 + 1]
         return self.biquad(
             a=torch.stack([a0, a1, a2], dim=-1),
             b=torch.stack([b0, b1, b2], dim=-1))
@@ -70,27 +68,25 @@ class ParametricEqualizer(nn.Module):
         Args:
             cutoff: cutoff frequency.
             gain: [torch.float32; [...]], boost of attenutation in decibel.
-            q: [torch.float32; [B]], quality factor.
+            q: [torch.float32; [...]], quality factor.
         Returns:
-            [torch.float32; [B, windows // 2 + 1]], frequency filter.
+            [torch.float32; [..., windows // 2 + 1]], frequency filter.
         """
-        bsize, = q.shape
         # ref: torchaudio.functional.highpass_biquad
         w0 = 2 * np.pi * cutoff / self.sr
-        # [B]
+        # [...]
         alpha = np.sin(w0) / 2 / q
-        cos_w0 = torch.tensor(
-            [np.cos(w0)] * bsize, dtype=torch.float32, device=q.device)
+        cos_w0 = torch.full_like(alpha, np.cos(w0))
         A = (gain / 40. * np.log(10)).exp()
-        # [B], fir
+        # [...], fir
         b0 = A * ((A + 1) + (A - 1) * cos_w0 + 2 * A.sqrt() * alpha)
         b1 = -2 * A * ((A - 1) + (A + 1) * cos_w0)
         b2 = A * ((A + 1) + (A - 1) * cos_w0 - 2 * A.sqrt() * alpha)
-        # [B], iir
+        # [...], iir
         a0 = (A + 1) - (A - 1) * cos_w0 + 2 * A.sqrt() * alpha
         a1 = 2 * ((A - 1) - (A + 1) * cos_w0)
         a2 = (A + 1) - (A - 1) * cos_w0 - 2 * A.sqrt() * alpha
-        # [B, windows // 2 + 1]
+        # [..., windows // 2 + 1]
         return self.biquad(
             a=torch.stack([a0, a1, a2], dim=-1),
             b=torch.stack([b0, b1, b2], dim=-1))
