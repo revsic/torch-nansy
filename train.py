@@ -61,8 +61,14 @@ class Trainer:
         # training wrapper
         self.wrapper = TrainingWrapper(model, disc, config, device)
 
+        params = dict(self.model.named_parameters())
         self.optim_g = torch.optim.Adam(
-            self.model.parameters(),
+            [param for key, param in params.items() if not key.startswith('verifier')],
+            config.train.learning_rate,
+            (config.train.beta1, config.train.beta2))
+
+        self.optim_v = torch.optim.Adam(
+            [param for key, param in params.items() if key.startswith('verifier')],
             config.train.learning_rate,
             (config.train.beta1, config.train.beta2))
 
@@ -99,15 +105,19 @@ class Trainer:
                         self.wrapper.loss_generator(sid, s1, s2)
                     # update
                     self.optim_g.zero_grad()
+                    self.optim_v.zero_grad()
                     loss_g.backward()
                     self.optim_g.step()
+                    self.optim_v.step()
 
                     loss_d, losses_d, aux_d = \
                         self.wrapper.loss_discriminator(sid, s1, s2)
                     # update
                     self.optim_d.zero_grad()
+                    self.optim_v.zero_grad()
                     loss_d.backward()
                     self.optim_d.step()
+                    self.optim_v.step()
 
                     step += 1
                     pbar.update()
