@@ -9,8 +9,8 @@ import speechset
 from config import Config
 
 
-class CacheAugment:
-    """Cache the augmentation based on praat.
+class PraatAugment:
+    """Praat based augmentation.
     """
     def __init__(self,
                  config: Config,
@@ -30,13 +30,15 @@ class CacheAugment:
         self.pitch_ceil = pitch_ceil
 
     def augment(self,
-                snd: parselmouth.Sound,
+                snd: Union[parselmouth.Sound, np.ndarray],
                 formant_shift: float = 1.,
                 pitch_shift: float = 1.,
                 pitch_range: float = 1.,
                 duration_factor: float = 1.) -> np.ndarray:
         """Augment the sound signal with praat.
         """
+        if not isinstance(snd, parselmouth.Sound):
+            snd = parselmouth.Sound(snd, sampling_rate=self.config.model.sr)
         pitch = parselmouth.praat.call(
             snd, 'To Pitch', self.pitch_steps, self.pitch_floor, self.pitch_ceil)
         median = parselmouth.praat.call(
@@ -49,10 +51,9 @@ class CacheAugment:
             duration_factor).values
         return out
 
-    def augment_wrap(self, wrap: Tuple[np.ndarray, float, float, int]) -> np.ndarray:
-        audio, fs, ps, sr = wrap
-        snd = parselmouth.Sound(audio, sampling_frequency=sr)
-        return self.augment(snd, fs, ps)
+    def augment_wrap(self, wrap: Tuple[np.ndarray, float, float]) -> np.ndarray:
+        audio, fs, ps = wrap
+        return self.augment(audio, fs, ps)
 
     def cache(self,
               out_dir: str,
@@ -107,7 +108,7 @@ class CacheAugment:
                 for out in pool.imap_unordered(
                         self.augment_wrap,
                         [
-                            (audio, f_, p_, self.config.model.sr)
+                            (audio, f_, p_)
                             for p in ps
                             for f in fs
                             for f_, p_ in [
@@ -144,7 +145,7 @@ if __name__ == '__main__':
         reader = speechset.utils.DumpReader(args.data_dir)
 
         config = Config()
-        aug = CacheAugment(config)
+        aug = PraatAugment(config)
         aug.cache(
             args.out_dir,
             reader,
