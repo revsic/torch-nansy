@@ -105,10 +105,10 @@ class Trainer:
                         self.wrapper.loss_generator(sid, s1, s2)
                     # update
                     self.optim_g.zero_grad()
-                    self.optim_v.zero_grad()
+                    # self.optim_v.zero_grad()
                     loss_g.backward()
                     self.optim_g.step()
-                    self.optim_v.step()
+                    # self.optim_v.step()
 
                     loss_d, losses_d, aux_d = \
                         self.wrapper.loss_discriminator(sid, s1, s2)
