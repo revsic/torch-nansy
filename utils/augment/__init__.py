@@ -99,12 +99,12 @@ class Augment(nn.Module):
             return out
         # praat-based augmentation
         if formant_shift is None:
-            formant_shift = torch.ones(bsize, device=out.device)
+            formant_shift = torch.ones(bsize)
         if pitch_shift is None:
-            pitch_shift = torch.ones(bsize, device=out.device)
+            pitch_shift = torch.ones(bsize)
         out = torch.tensor(np.stack([self.praat.augment(o, fs.item(), ps.item())
             for o, fs, ps in zip(
                 out.cpu().numpy(),
                 formant_shift.cpu().numpy(),
-                pitch_shift.cpu().numpy())], axis=0), device=out.device)
+                pitch_shift.cpu().numpy())], axis=0), device=out.device, dtype=torch.float32)
         return out
