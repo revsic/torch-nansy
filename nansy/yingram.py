@@ -88,8 +88,8 @@ class Yingram(nn.Module):
         w, tau_max = self.windows, self.lmax
         # [B, T / strides, windows]
         frames = F.pad(audio, [0, w]).unfold(-1, w, self.strides)
-        # [B, T / strides, windows // 2 + 1]
-        fft = torch.fft.rfft(frames, dim=-1)
+        # [B, T / strides, windows + 1]
+        fft = torch.fft.rfft(frames, w * 2, dim=-1)
         # [B, T / strides, windows], symmetric
         corr = torch.fft.irfft(fft.abs().square(), dim=-1)
         # [B, T / strides, windows + 1]
@@ -97,7 +97,7 @@ class Yingram(nn.Module):
         # [B, T / strides, lmax], difference function
         diff = (
             # c[W - tau]
-            torch.flip(cumsum[..., w - tau_max:w], dims=[-1])
+            torch.flip(cumsum[..., w - tau_max + 1:w + 1], dims=[-1])
             # - 2 * a[tau]
             - 2 * corr[..., :tau_max]
             # + (c[W] - c[tau]])
