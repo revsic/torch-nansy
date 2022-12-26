@@ -134,8 +134,8 @@ if __name__ == '__main__':
         parser = argparse.ArgumentParser()
         parser.add_argument('--data-dir', required=True)
         parser.add_argument('--out-dir', required=True)
-        parser.add_argument('--num-ps', default=5, type=int)
-        parser.add_argument('--num-fs', default=5, type=int)
+        parser.add_argument('--num-ps', default=3, type=int)
+        parser.add_argument('--num-fs', default=3, type=int)
         parser.add_argument('--pool', default=None, type=int)
         parser.add_argument('--chunksize', default=1, type=int)
         args = parser.parse_args()
@@ -155,4 +155,3 @@ if __name__ == '__main__':
             args.chunksize)
 
     main()
-
