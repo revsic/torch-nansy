@@ -38,11 +38,16 @@ class PraatAugment:
         """Augment the sound signal with praat.
         """
         if not isinstance(snd, parselmouth.Sound):
-            snd = parselmouth.Sound(snd, sampling_rate=self.config.model.sr)
+            snd = parselmouth.Sound(snd, sampling_frequency=self.config.model.sr)
         pitch = parselmouth.praat.call(
             snd, 'To Pitch', self.pitch_steps, self.pitch_floor, self.pitch_ceil)
-        median = parselmouth.praat.call(
-            pitch, 'Get quantile', 0., 0., 0.5, 'Hertz')
+        ndpit = pitch.selected_array['frequency']
+        # if all unvoiced
+        nonzero = ndpit > 1e-5
+        if nonzero.sum() == 0:
+            return snd.values[0]
+        # if voiced
+        median = np.median(ndpit[nonzero]).item()
         out, = parselmouth.praat.call(
             (snd, pitch), 'Change gender',
             formant_shift,
