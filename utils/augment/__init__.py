@@ -30,9 +30,10 @@ class Augment(nn.Module):
         f_min, f_max, peaks = \
             config.train.cutoff_lowpass, \
             config.train.cutoff_highpass, config.train.num_peak
+        # peaks except frequency min and max
         self.register_buffer(
             'peak_centers',
-            f_min * (f_max / f_min) ** (torch.arange(peaks) / (peaks - 1)),
+            f_min * (f_max / f_min) ** (torch.arange(peaks + 2)[1:-1] / (peaks + 1)),
             persistent=False)
 
     def forward(self,
@@ -52,6 +53,8 @@ class Augment(nn.Module):
         Returns:
             [torch.float32; [B, T]], augmented.
         """
+        # B
+        bsize, _ = wavs.shape
         # [B, F, T / S], complex64
         fft = torch.stft(
             wavs,
@@ -69,8 +72,6 @@ class Augment(nn.Module):
             if gain is None:
                 # [B, num_peak]
                 gain = torch.zeros_like(q[:, :-2])
-            # B
-            bsize, _ = wavs.shape
             # [B, num_peak]
             center = self.peak_centers[None].repeat(bsize, 1)
             # [B, F]
@@ -94,8 +95,14 @@ class Augment(nn.Module):
             self.window).clamp(-1., 1.)
         # max value normalization
         out = out / out.abs().max(dim=-1, keepdim=True).values.clamp_min(1e-7)
-        # praat-based augmentation 
-        out = torch.tensor(np.stack([self.praat.augment(o, fs, ps)
+        if formant_shift is None and pitch_shift is None:
+            return out
+        # praat-based augmentation
+        if formant_shift is None:
+            formant_shift = torch.ones(bsize, device=out.device)
+        if pitch_shift is None:
+            pitch_shift = torch.ones(bsize, device=out.device)
+        out = torch.tensor(np.stack([self.praat.augment(o, fs.item(), ps.item())
             for o, fs, ps in zip(
                 out.cpu().numpy(),
                 formant_shift.cpu().numpy(),
