@@ -124,7 +124,7 @@ class Trainer:
                     pbar.set_postfix({'loss': loss_d.item(), 'step': step})
 
                     for key, val in {**losses_g, **losses_d}.items():
-                        self.train_log.add_scalar(f'{key}', val, step)
+                        self.train_log.add_scalar(key, val, step)
 
                     with torch.no_grad():
                         grad_norm = np.mean([
@@ -160,6 +160,7 @@ class Trainer:
 
             self.model.save(f'{self.ckpt_path}_{epoch}.ckpt', self.optim_g)
             self.disc.save(f'{self.ckpt_path}_{epoch}.ckpt-disc', self.optim_d)
+            torch.save(self.optim_v.state_dict(), f'{self.ckpt_path}_{epoch}.ckpt-ver')
 
             losses = {
                 key: [] for key in {**losses_d, **losses_g}}
@@ -177,7 +178,7 @@ class Trainer:
                         losses[key].append(val)
                 # test log
                 for key, val in losses.items():
-                    self.test_log.add_scalar(f'{key}', np.mean(val), step)
+                    self.test_log.add_scalar(key, np.mean(val), step)
 
     def mel_img(self, mel: np.ndarray) -> np.ndarray:
         """Generate mel-spectrogram images.
@@ -260,6 +261,9 @@ if __name__ == '__main__':
         # load checkpoint
         ckpt = torch.load(ckpt_path)
         model.load_(ckpt, trainer.optim_g)
+        # verfier optimizer
+        ckpt_ver = torch.load(f'{ckpt_path}-ver')
+        trainer.optim_v.load_state_dict(ckpt_ver)
         # discriminator checkpoint
         ckpt_disc = torch.load(f'{ckpt_path}-disc')
         disc.load_(ckpt_disc, trainer.optim_d)
