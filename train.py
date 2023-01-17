@@ -42,19 +42,21 @@ class Trainer:
         self.dataset = dataset
         self.testset = testset
         self.config = config
+        # for disabling auto-collation
+        def identity(x): return x
 
         self.loader = torch.utils.data.DataLoader(
             self.dataset,
             batch_size=config.train.batch,
             shuffle=config.train.shuffle,
-            collate_fn=self.dataset.collate,
+            collate_fn=identity,
             num_workers=config.train.num_workers,
             pin_memory=config.train.pin_memory)
 
         self.testloader = torch.utils.data.DataLoader(
             self.testset,
             batch_size=config.train.batch,
-            collate_fn=self.dataset.collate,
+            collate_fn=identity,
             num_workers=config.train.num_workers,
             pin_memory=config.train.pin_memory)
 
@@ -91,8 +93,7 @@ class Trainer:
         for epoch in tqdm.trange(epoch, self.config.train.epoch):
             with tqdm.tqdm(total=len(self.loader), leave=False) as pbar:
                 for it, bunch in enumerate(self.loader):
-                    seg = self.wrapper.wrap(
-                        self.wrapper.random_segment(bunch))
+                    seg = self.wrapper.random_segment(self.dataset.collate(bunch))
                     loss_g, losses_g, aux_g = \
                         self.wrapper.loss_generator(seg)
                     # update
@@ -129,7 +130,8 @@ class Trainer:
                     self.train_log.add_scalar(
                         'common/learning-rate-d', self.optim_d.param_groups[0]['lr'], step)
 
-                    if (it + 1) % (len(self.loader) // 50) == 0:
+                    NUM_LOG = 50
+                    if it % (len(self.loader) // NUM_LOG) == 0:
                         self.train_log.add_image(
                             'train/gt',
                             self.mel_img(aux_g['mel'][Trainer.LOG_IDX]), step)
@@ -154,10 +156,9 @@ class Trainer:
                 losses = {
                     key: [] for key in {**losses_d, **losses_g}}
                 for bunch in self.testloader:
-                    seg = self.wrapper.wrap(
-                        self.wrapper.random_segment(bunch))
+                    seg = self.wrapper.random_segment(self.testset.collate(bunch))
                     _, losses_g, _ = self.wrapper.loss_generator(seg)
-                    _, losses_d, _ = self.wrapper.loss_discriminator(seg, r1=False)
+                    _, losses_d = self.wrapper.loss_discriminator(seg, r1=False)
                     for key, val in {**losses_g, **losses_d}.items():
                         losses[key].append(val)
                 # test log
@@ -226,12 +227,12 @@ if __name__ == '__main__':
     # prepare datasets
     dataset = RealtimeWavDataset(
         speechset.datasets.ConcatReader([
-            speechset.utils.DumpReader('./datasets/train-clean-360'),
-            speechset.utils.DumpReader('./datasets/vctk')]),
+            speechset.utils.DumpReader('./datasets/train-clean-360', config.model.sr),
+            speechset.utils.DumpReader('./datasets/vctk', config.model.sr)]),
         device,
         verbose=True)
     testset = RealtimeWavDataset(
-        speechset.utils.DumpReader('./datasets/test-clean'))
+        speechset.utils.DumpReader('./datasets/test-clean', config.model.sr), device)
     # weighted random wrapper
     # , guarantee the all speaker in single batch is all different
     dataset = WeightedRandomWrapper(dataset)
