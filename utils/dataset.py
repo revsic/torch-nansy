@@ -1,151 +1,153 @@
-import os
-from copy import deepcopy
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
+import torch
+import torch.nn.functional as F
+import torchaudio
+from tqdm import tqdm
 
-from speechset.datasets import ConcatReader, DataReader
-from speechset.speeches.speechset import SpeechSet
+import speechset
 
  
-class MultipleReader(ConcatReader):
-    """Wrapping concat reader for paired-dataset supports.
+class RealtimeWavDataset(speechset.WavDataset):
+    """Realtime-loading scheme.
     """
-    def __init__(self, readers: List[DataReader]):
+    def __init__(self,
+                 reader: speechset.datasets.DataReader,
+                 device: torch.device,
+                 verbose: bool = False):
         """Initializer.
-        Args:
-            readers: list of data readers.
-        """
-        super().__init__(readers)
-        indices = np.cumsum([0] + [len(speakers) for speakers in self.speakers_])
-        self.transcript = {
-            path: (sid + start, text)
-            for reader, start in zip(self.readers, indices)
-            for path, (sid, text) in reader.transcript.items()}
-
-
-class PairedDataset(SpeechSet):
-    """Pairing the data w.r.t. the identifier.
-    """
-    def __init__(self, reader: DataReader, verbose: Optional[Callable] = None):
-        """Cache the dataset and grouping the dataset with identifier.
-        Args:
-            reader: data reader.
-            verbose: progressive bar verbose support, `tqdm` could be possible.
         """
         super().__init__(reader)
-        self.groups = {}
-        iters = self.dataset
-        # verbose support
+        self.device = device
+        succeed = RealtimeWavDataset.hook_reader(reader)
         if verbose:
-            iters = verbose(iters)
-        # group with sid
-        for path in iters:
-            # temp, hack of LibriTTS reader, for optimization
-            key, _ = os.path.splitext(os.path.basename(path))
-            sid, _ = self.reader.transcript[key]
+            print(f'[*] RealtimeWavDataset: {succeed} hook installed')
+
+    def normalize(self, _: str, speech: Tuple[torch.Tensor, int, int]) \
+            -> Tuple[torch.Tensor, int, int]:
+        """Normalize datum.
+        Args:
+            _: transcription.
+            speech: speech signal and sampling rates.
+        """
+        return speech
+
+    def collate(self, bunch: List[Tuple[torch.Tensor, int, int]]) \
+            -> Tuple[torch.Tensor, torch.Tensor]:
+        """Collate bunch of datum to the batch data.
+        Args:
+            bunch: B x tuple, loaded speech signals.
+        Returns:
+            batch data.
+                speeches: [torch.float32; [B, T]], speech signal.
+                lengths: [torch.long; [B]], speech lengths.
+        """
+        # resample on gpu
+        audios = [
+            torchaudio.functional.resample(audio.to(self.device), prev, tgt)
+            for audio, prev, tgt in bunch]
+        # [B]
+        lengths = torch.tensor([len(a) for a in audios], dtype=torch.long, device=self.device)
+        # []
+        maxlen = lengths.amax()
+        # [B, T]
+        speeches = torch.stack([F.pad(a, [0, maxlen - len(a)])  for a in audios], dim=0)
+        return speeches, lengths
+
+    @staticmethod
+    def load_audio(path: str, sr: int) -> Tuple[torch.Tensor, int, int]:
+        """Load audio with real-time action.
+        Args:
+            path: path to the audio.
+            sr: sampling rate.
+        Returns:
+            [torch.float32; [T]], audio signal in original sampling rate, [-1, 1]-ranged.
+            int, original sampling rate.
+            int, target sampling rate, same as `sr`.
+        """
+        # [C, T]
+        audio, prev = torchaudio.load(path)
+        # [T]
+        return audio[0].to(torch.float32), prev, sr
+
+    @classmethod
+    def hook_reader(cls, reader: speechset.datasets.DataReader) -> int:
+        """Reader hook for preventing resampling on reading with CPU.
+        Args:
+            reader: data reader.
+        """
+        if isinstance(reader, speechset.datasets.ConcatReader):
+            succ = 0
+            for reader in reader.readers:
+                succ += RealtimeWavDataset.hook_reader(reader)
+            return succ
+
+        reader.load_audio = RealtimeWavDataset.load_audio
+        return 1
+
+
+class WeightedRandomWrapper(speechset.speeches.SpeechSet):
+    """Speechset wrapper for weighted sampling. 
+    """
+    def __init__(self, wrapped: speechset.speeches.SpeechSet):
+        """Initializer.
+        Args:
+            wrapped: speechset.
+        """
+        super().__init__(wrapped.reader)
+        # hold
+        self.speechset = wrapped
+        # grouping
+        self.groups = {}
+        for path, (sid, _) in tqdm(self.dataset.items()):
             if sid not in self.groups:
                 self.groups[sid] = []
             self.groups[sid].append(path)
-        # set default pair
-        self.random_pairing()
+        # queing
+        self.sids = list(self.groups.keys())
+        self.queue = {sid: self.shuffle(paths) for sid, paths in self.groups.items()}
 
-    def random_pairing(self, seed: Optional[int] = None):
-        """Re-initialize the pair randomly.
-        Args:
-            seed: random seed.
+    def shuffle(self, lists: List[str], seed: Optional[int] = None):
+        """Shuffle the queue
         """
         rng = np.random.default_rng(seed)
-        pairs = []
-        for sid, paths in self.groups.items():
-            indices = rng.permutation(len(paths))
-            # repeating once
-            if len(paths) % 2 == 1:
-                indices = np.append(indices, indices[0])
-            # pairing
-            pairs.extend([
-                (sid, paths[i], paths[j])
-                for i, j in indices.reshape(-1, 2)])
-        # set
-        self.pairs = pairs
+        return [lists[i] for i in rng.permutation(len(lists))]
 
-    def split(self, size: int):
-        """Split dataset w.r.t. the speaker.
-        Args:
-            size: the number of the speakers for the first part.
-        Returns:
-            residual datset.
-        """
-        residual = deepcopy(self)
-        groups = list(self.groups.items())
-        # seperate the speaker groups
-        residual.groups = dict(groups[size:])
-        self.groups = dict(groups[:size])
-        # random pairing
-        residual.random_pairing()
-        self.random_pairing()
-        return residual
-
-    def __getitem__(self, index: Union[int, slice]) -> Any:
-        """Lazy normalizing.
-        Args:
-            index: input index.
-        Returns:
-            normalized inputs.
-        """
-        # reading pairs
-        raw = self.pairs[index]
-        if isinstance(index, int):
-            # unpack
-            sid, *paths = raw
-            # preprocess
-            p1, p2 = [self.normalize(*self.preproc(p)) for p in paths]
-            return sid, p1, p2
-        # normalize the slice
-        bunches = [
-            (sid, *[self.normalize(*self.preproc(p)) for p in paths])
-            for sid, *paths in raw]
-        return self.collate(bunches)
+    def sample(self, sid: int):
+        # assign if empty
+        if len(self.queue[sid]) == 0:
+            self.queue[sid] = self.shuffle(self.groups[sid])
+        # pop
+        path = self.queue[sid].pop()
+        return self.normalize(*self.preproc(path))
 
     def __len__(self) -> int:
         """Return length of the dataset.
         Returns:
             length.
         """
-        return len(self.pairs)
+        return len(self.groups)
 
-    def normalize(self, sid: int, text: str, speech: np.ndarray) -> np.ndarray:
-        """Normalize datum with auxiliary ids.
+    def __getitem__(self, index: Union[int, slice]):
+        """Weighted sampling.
         Args:
-            sid: speaker id.
-            text: transcription.
-            speech: [np.float32; [T]], speech in range (-1, 1).
+            index: input index.
         Returns:
-            speech only (for augmentation)
+            normalized.
         """
-        return speech
+        sid = self.sids[index]
+        if isinstance(index, int):
+            return self.sample(sid)
+        # pack
+        return self.collate([self.sample(s) for s in sid])
 
-    def collate(self, bunch: List[Tuple[int, np.ndarray, np.ndarray]]) \
-            -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Collate bunch of datum to the batch data.
-        Args:
-            bunch: B x [...], list of normalized inputs.
-                sid: speaker id.
-                speech1, speech2: [np.float32; [T]], speach signal.
-        Returns:
-            batch data.
-                sids: [np.long; [B]], speaker ids.
-                lengths: [np.long; [B, 2]], speech lengths, 0 for speech1, 1 for speech2.
-                speech1, speech2: [np.float32; [B, T]], speech signal.
+    def normalize(self, *args, **kwargs):
+        """Forward to given.
         """
-        # [B]
-        sids = np.array([sid for sid, _, _ in bunch])
-        # [B, 2]
-        lengths = np.array([[len(s1), len(s2)] for _, s1, s2 in bunch])
-        len1, len2 = lengths.max(axis=0)
-        # [B, T]
-        speech1 = np.stack([
-            np.pad(signal, [0, len1 - len(signal)]) for _, signal, _ in bunch])
-        speech2 = np.stack([
-            np.pad(signal, [0, len2 - len(signal)]) for _, _, signal in bunch])
-        return sids, lengths, speech1, speech2
+        return self.speechset.normalize(*args, **kwargs)
+
+    def collate(self, *args, **kwargs):
+        """Forward to given.
+        """
+        return self.speechset.collate(*args, **kwargs)
