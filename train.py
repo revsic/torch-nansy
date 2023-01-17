@@ -190,8 +190,6 @@ if __name__ == '__main__':
     parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--config', default=None)
     parser.add_argument('--load-epoch', default=0, type=int)
-    parser.add_argument('--data-dir', default=None)
-    parser.add_argument('--test-dir', default=None)
     parser.add_argument('--name', default=None)
     parser.add_argument('--auto-rename', default=False, action='store_true')
     args = parser.parse_args()
@@ -227,11 +225,13 @@ if __name__ == '__main__':
         'cuda:0' if torch.cuda.is_available() else 'cpu')
     # prepare datasets
     dataset = RealtimeWavDataset(
-        speechset.utils.DumpReader(args.data_dir),
+        speechset.datasets.ConcatReader([
+            speechset.utils.DumpReader('./datasets/train-clean-360'),
+            speechset.utils.DumpReader('./datasets/vctk')]),
         device,
         verbose=True)
     testset = RealtimeWavDataset(
-        speechset.utils.DumpReader(args.test_dir))
+        speechset.utils.DumpReader('./datasets/test-clean'))
     # weighted random wrapper
     # , guarantee the all speaker in single batch is all different
     dataset = WeightedRandomWrapper(dataset)
