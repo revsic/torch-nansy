@@ -247,8 +247,8 @@ class TrainingWrapper:
         start = np.random.randint(bsize - 1) + 1
         # [B], for shuffling
         indices = (np.arange(bsize) + start) % bsize
-        # [B, ver_out_channels]
-        spk_pos, spk_neg = spk, spk[indices]
+        # [B, ver_out_channels], detaching for only training with recosntructino
+        spk_pos, spk_neg = spk.detach(), spk[indices].detach()
 
         # [B, T]
         pos_real = torch.matmul(spk_pos[:, None], spk_real).squeeze(dim=1)
