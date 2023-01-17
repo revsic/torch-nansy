@@ -26,7 +26,7 @@ class Config:
         self.sr = 22050
 
         # yingram
-        self.yin_strides = 450  # targeting 49hz on 22050hz sr
+        self.yin_strides = 441  # targeting 50hz on 22050hz sr
         self.yin_windows = 2048
         self.yin_lmin = 22      # 1000.40hz, 83midi(floor)
         self.yin_lmax = 2047    #   10.77hz,  5midi(ceil), 79-channel yingram
