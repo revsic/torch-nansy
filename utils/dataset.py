@@ -103,10 +103,11 @@ class RealtimeWavDataset(speechset.WavDataset):
 class WeightedRandomWrapper(speechset.speeches.SpeechSet):
     """Speechset wrapper for weighted sampling. 
     """
-    def __init__(self, wrapped: speechset.speeches.SpeechSet):
+    def __init__(self, wrapped: speechset.speeches.SpeechSet, subepoch: Optional[int] = None):
         """Initializer.
         Args:
             wrapped: speechset.
+            subepoch: the number of the iterations for 1-epoch, use `len(wrapped)` as default.
         """
         super().__init__(wrapped.reader)
         # hold
@@ -120,6 +121,8 @@ class WeightedRandomWrapper(speechset.speeches.SpeechSet):
         # queing
         self.sids = list(self.groups.keys())
         self.queue = {sid: self.shuffle(paths) for sid, paths in self.groups.items()}
+        # iteration checks
+        self.subepoch = subepoch or (len(wrapped) // len(self.sids))
 
     def shuffle(self, lists: List[str], seed: Optional[int] = None):
         """Shuffle the queue
@@ -140,7 +143,7 @@ class WeightedRandomWrapper(speechset.speeches.SpeechSet):
         Returns:
             length.
         """
-        return len(self.groups)
+        return len(self.groups) * self.subepoch
 
     def __getitem__(self, index: Union[int, slice]):
         """Weighted sampling.
@@ -149,11 +152,14 @@ class WeightedRandomWrapper(speechset.speeches.SpeechSet):
         Returns:
             normalized.
         """
-        sid = self.sids[index]
+        num = len(self.sids)
         if isinstance(index, int):
-            return self.sample(sid)
+            # cyclic
+            return self.sample(self.sids[index % num])
         # pack
-        return self.collate([self.sample(s) for s in sid])
+        return self.collate([
+            self.sample(self.sids[i % num])
+            for i in range(index.start, index.stop, index.step or 1)])
 
     def normalize(self, *args, **kwargs):
         """Forward to given.
