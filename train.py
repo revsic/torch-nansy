@@ -13,7 +13,7 @@ import speechset
 from config import Config
 from disc import Discriminator
 from nansy import Nansy
-from utils.dataset import PairedDataset
+from utils.dataset import RealtimeWavDataset, WeightedRandomWrapper
 from utils.wrapper import TrainingWrapper
 
 
@@ -25,23 +25,23 @@ class Trainer:
     def __init__(self,
                  model: Nansy,
                  disc: Discriminator,
-                 dataset: PairedDataset,
+                 dataset: speechset.WavDataset,
+                 testset: speechset.WavDataset,
                  config: Config,
                  device: torch.device):
         """Initializer.
         Args:
             model: Nansy model.
             disc: discriminator.
-            dataset: dataset.
+            dataset, testset: dataset.
             config: unified configurations.
             device: target computing device.
         """
         self.model = model
         self.disc = disc
         self.dataset = dataset
+        self.testset = testset
         self.config = config
-        # train-test split
-        self.testset = self.dataset.split(config.train.split)
 
         self.loader = torch.utils.data.DataLoader(
             self.dataset,
@@ -61,14 +61,8 @@ class Trainer:
         # training wrapper
         self.wrapper = TrainingWrapper(model, disc, config, device)
 
-        params = dict(self.model.named_parameters())
         self.optim_g = torch.optim.Adam(
-            [param for key, param in params.items() if not key.startswith('verifier')],
-            config.train.learning_rate,
-            (config.train.beta1, config.train.beta2))
-
-        self.optim_v = torch.optim.Adam(
-            [param for key, param in params.items() if key.startswith('verifier')],
+            self.model.parameters(),
             config.train.learning_rate,
             (config.train.beta1, config.train.beta2))
 
@@ -96,8 +90,6 @@ class Trainer:
         step = epoch * len(self.loader)
         for epoch in tqdm.trange(epoch, self.config.train.epoch):
             with tqdm.tqdm(total=len(self.loader), leave=False) as pbar:
-                # random pairing before sampling
-                self.dataset.random_pairing(seed=epoch)
                 for it, bunch in enumerate(self.loader):
                     sid, s1, s2 = self.wrapper.wrap(
                         self.wrapper.random_segment(bunch))
@@ -105,19 +97,15 @@ class Trainer:
                         self.wrapper.loss_generator(sid, s1, s2)
                     # update
                     self.optim_g.zero_grad()
-                    # self.optim_v.zero_grad()
                     loss_g.backward()
                     self.optim_g.step()
-                    # self.optim_v.step()
 
-                    loss_d, losses_d, aux_d = \
+                    loss_d, losses_d = \
                         self.wrapper.loss_discriminator(sid, s1, s2)
                     # update
                     self.optim_d.zero_grad()
-                    self.optim_v.zero_grad()
                     loss_d.backward()
                     self.optim_d.step()
-                    self.optim_v.step()
 
                     step += 1
                     pbar.update()
@@ -160,7 +148,6 @@ class Trainer:
 
             self.model.save(f'{self.ckpt_path}_{epoch}.ckpt', self.optim_g)
             self.disc.save(f'{self.ckpt_path}_{epoch}.ckpt-disc', self.optim_d)
-            torch.save(self.optim_v.state_dict(), f'{self.ckpt_path}_{epoch}.ckpt-ver')
 
             losses = {
                 key: [] for key in {**losses_d, **losses_g}}
@@ -169,6 +156,7 @@ class Trainer:
                 losses[key] = []
 
             with torch.no_grad():
+                self.model.eval()
                 for bunch in self.testloader:
                     sid, s1, s2 = self.wrapper.wrap(
                         self.wrapper.random_segment(bunch))
@@ -179,6 +167,8 @@ class Trainer:
                 # test log
                 for key, val in losses.items():
                     self.test_log.add_scalar(key, np.mean(val), step)
+                # rollback
+                self.model.train()
 
     def mel_img(self, mel: np.ndarray) -> np.ndarray:
         """Generate mel-spectrogram images.
@@ -205,6 +195,7 @@ if __name__ == '__main__':
     parser.add_argument('--config', default=None)
     parser.add_argument('--load-epoch', default=0, type=int)
     parser.add_argument('--data-dir', default=None)
+    parser.add_argument('--test-dir', default=None)
     parser.add_argument('--name', default=None)
     parser.add_argument('--auto-rename', default=False, action='store_true')
     args = parser.parse_args()
@@ -236,20 +227,27 @@ if __name__ == '__main__':
     if not os.path.exists(ckpt_path):
         os.makedirs(ckpt_path)
 
-    # prepare datasets
-    dataset = PairedDataset(
-        speechset.utils.DumpReader(args.data_dir))
-
-    # model definition
     device = torch.device(
         'cuda:0' if torch.cuda.is_available() else 'cpu')
+    # prepare datasets
+    dataset = RealtimeWavDataset(
+        speechset.utils.DumpReader(args.data_dir),
+        device,
+        verbose=True)
+    testset = RealtimeWavDataset(
+        speechset.utils.DumpReader(args.test_dir))
+    # weighted random wrapper
+    # , guarantee the all speaker in single batch is all different
+    dataset = WeightedRandomWrapper(dataset)
+
+    # model definition
     model = Nansy(config.model)
     model.to(device)
 
     disc = Discriminator(config.disc)
     disc.to(device)
 
-    trainer = Trainer(model, disc, dataset, config, device)
+    trainer = Trainer(model, disc, dataset, testset, config, device)
 
     # loading
     if args.load_epoch > 0:
@@ -261,9 +259,6 @@ if __name__ == '__main__':
         # load checkpoint
         ckpt = torch.load(ckpt_path)
         model.load_(ckpt, trainer.optim_g)
-        # verfier optimizer
-        ckpt_ver = torch.load(f'{ckpt_path}-ver')
-        trainer.optim_v.load_state_dict(ckpt_ver)
         # discriminator checkpoint
         ckpt_disc = torch.load(f'{ckpt_path}-disc')
         disc.load_(ckpt_disc, trainer.optim_d)
