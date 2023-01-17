@@ -167,14 +167,12 @@ class Synthesizer(nn.Module):
         # since wav2vec2 feature is 50hz signal
         # and it mismatch the output spectrogram settings
         # , interpolate it based on the length of `energy`
-        # [B, I, T]
-        # ref:HooliGAN, McCarthy & Ahmed, arXiv:2008.02493
-        # on Eq(2), they use linear interpolation to upsample the pitch values.
-        inputs = F.interpolate(inputs, size=timestep, mode='linear')
-        # [B, C, T]
+        # [B, C, T']
         x = self.preconv(inputs)
-        # [B, C, T]
+        # [B, C, T']
         x = self.preblocks(x)
+        # [B, I, T]
+        x = F.interpolate(x, size=timestep, mode='linear')
         # [B, C, T], energy conditioning
         x = self.cond_energy(torch.cat([x, energy[:, None]], dim=1))
         for block in self.postblocks:
