@@ -13,3 +13,5 @@ datasets
 
 # runner
 run.sh
+ckpt
+log
