@@ -201,8 +201,8 @@ class EcapaTdnn(nn.Module):
         self.pool = nn.Sequential(
             AttentiveStatisticsPooling(hiddens, bottleneck),
             nn.BatchNorm1d(hiddens * 2),
-            nn.Linear(hiddens * 2, out_channels),
-            nn.BatchNorm1d(out_channels))
+            nn.Linear(hiddens * 2, out_channels, bias=False))
+        #   nn.BatchNorm1d(out_channels)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         """Evaluate the x-vectors from the input sequence.
