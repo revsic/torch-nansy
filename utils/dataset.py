@@ -18,17 +18,19 @@ class RealtimeWavDataset(speechset.WavDataset):
                  verbose: bool = False):
         """Initializer.
         """
-        super().__init__(reader)
-        self.device = device
         succeed = RealtimeWavDataset.hook_reader(reader)
         if verbose:
             print(f'[*] RealtimeWavDataset: {succeed} hook installed')
+        # super call hooked reader
+        super().__init__(reader)
+        self.device = device
 
-    def normalize(self, _: str, speech: Tuple[torch.Tensor, int, int]) \
+    def normalize(self, sid: int, text: str, speech: Tuple[torch.Tensor, int, int]) \
             -> Tuple[torch.Tensor, int, int]:
         """Normalize datum.
         Args:
-            _: transcription.
+            sid: speaker id.
+            text: transcription.
             speech: speech signal and sampling rates.
         """
         return speech
@@ -79,11 +81,22 @@ class RealtimeWavDataset(speechset.WavDataset):
         """
         if isinstance(reader, speechset.datasets.ConcatReader):
             succ = 0
-            for reader in reader.readers:
-                succ += RealtimeWavDataset.hook_reader(reader)
+            for subreader in reader.readers:
+                succ += RealtimeWavDataset.hook_reader(subreader)
+                if isinstance(subreader, speechset.utils.DumpReader):
+                    # HACK: recaching the mapper
+                    loader = subreader.preproc()
+                    for path in subreader.dataset():
+                        reader.mapper[path] = loader
             return succ
 
-        reader.load_audio = RealtimeWavDataset.load_audio
+        if isinstance(reader, speechset.utils.DumpReader):
+            def load_dump(path: str):
+                sid, text, audio = np.load(path, allow_pickle=True)
+                return sid, text, (torch.tensor(audio), reader.prev_sr, reader.sr)
+            reader.preprocessor = load_dump
+        else:
+            reader.load_audio = RealtimeWavDataset.load_audio
         return 1
 
 
