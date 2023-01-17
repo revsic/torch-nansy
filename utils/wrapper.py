@@ -36,7 +36,7 @@ class TrainingWrapper:
         # alias
         self.seglen = self.config.train.seglen
 
-    def random_segment(self, bunch: List[np.ndarray]) -> List[np.ndarray]:
+    def random_segment(self, bunch: List[torch.Tensor]) -> torch.Tensor:
         """Segment the spectrogram and audio into fixed sized array.
         Args:
             bunch: input tensors.
