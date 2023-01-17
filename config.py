@@ -1,4 +1,3 @@
-from speechset.config import Config as DataConfig
 from disc.config import Config as DiscConfig
 from nansy.config import Config as ModelConfig
 
@@ -6,10 +5,9 @@ from nansy.config import Config as ModelConfig
 class TrainConfig:
     """Configuration for training loop.
     """
-    def __init__(self, sr: int, hop: int):
+    def __init__(self, hop: int):
         """Initializer.
         Args:
-            sr: sample rate.
             hop: stft hop length.
         """
         # optimizer
@@ -21,6 +19,7 @@ class TrainConfig:
         self.num_code = 32
         self.formant_shift = 1.4
         self.pitch_shift = 2.
+        self.pitch_range = 1.5
         self.cutoff_lowpass = 60
         self.cutoff_highpass = 10000
         self.q_min = 2
@@ -40,8 +39,8 @@ class TrainConfig:
         self.epoch = 1000
 
         # segment length
-        sec = 1.47
-        self.seglen = int(sr * sec) // hop * hop
+        frames = 128
+        self.seglen = hop * frames
 
         # path config
         self.log = './log'
@@ -58,22 +57,9 @@ class Config:
     """Integrated configuration.
     """
     def __init__(self):
-        self.data = DataConfig(batch=None)
-        self.train = TrainConfig(self.data.sr, self.data.hop)
         self.model = ModelConfig()
-        self.disc = DiscConfig(self.data.mel, self.model.ver_out_channels)
-
-    def validate(self):
-        assert (
-            self.data.sr == self.model.sr
-            and self.data.mel == self.model.mel_filters
-            and self.data.hop == self.model.mel_strides
-            and self.data.win == self.model.mel_windows
-            and self.data.fft == self.model.mel_windows
-            and self.data.fmin == self.model.mel_fmin
-            and self.data.fmax == self.model.mel_fmax
-            and self.data.win_fn == 'hann'), \
-                'inconsistent data and model settings'
+        self.train = TrainConfig(self.model.mel_strides)
+        self.disc = DiscConfig(self.model.mel_filters, self.model.ver_out_channels)
 
     def dump(self):
         """Dump configurations into serializable dictionary.

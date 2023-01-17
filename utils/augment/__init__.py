@@ -22,10 +22,10 @@ class Augment(nn.Module):
         self.config = config
         self.praat = PraatAugment(config)
         self.peq = ParametricEqualizer(
-            config.data.sr, config.data.win)
+            config.model.sr, config.model.mel_windows)
         self.register_buffer(
             'window',
-            torch.hann_window(config.data.win),
+            torch.hann_window(config.model.mel_windows),
             persistent=False)
         f_min, f_max, peaks = \
             config.train.cutoff_lowpass, \
@@ -58,9 +58,9 @@ class Augment(nn.Module):
         # [B, F, T / S], complex64
         fft = torch.stft(
             wavs,
-            self.config.data.fft,
-            self.config.data.hop,
-            self.config.data.win,
+            self.config.model.mel_windows,
+            self.config.model.mel_strides,
+            self.config.model.mel_windows,
             self.window,
             return_complex=True)
         # PEQ
@@ -89,9 +89,9 @@ class Augment(nn.Module):
         # [B, T]
         out = torch.istft(
             fft,
-            self.config.data.fft,
-            self.config.data.hop,
-            self.config.data.win,
+            self.config.model.mel_windows,
+            self.config.model.mel_strides,
+            self.config.model.mel_windows,
             self.window).clamp(-1., 1.)
         # max value normalization
         out = out / out.abs().max(dim=-1, keepdim=True).values.clamp_min(1e-7)
