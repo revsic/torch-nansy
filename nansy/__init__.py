@@ -28,7 +28,7 @@ class Nansy(nn.Module):
             config.w2v_lin)
 
         self.verifier = EcapaTdnn(
-            config.ver_in_channels,
+            self.wav2vec2.channels,
             config.ver_out_channels,
             config.ver_channels,
             config.ver_prekernels,

@@ -49,7 +49,6 @@ class Config:
         self.w2v_lin = 12
 
         # ecapa-tdnn
-        self.ver_in_channels = 1024  # wav2vec2 output channels
         self.ver_out_channels = 192
         self.ver_channels = 512
         self.ver_prekernels = 5
