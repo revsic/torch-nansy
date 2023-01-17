@@ -70,7 +70,7 @@ class Nansy(nn.Module):
             config.syn_postblocks)
 
         self.synth_src = synth_fn(self.yin_range)
-        self.synth_fil = synth_fn(Wav2Vec2Wrapper.OUT_CHANNELS)
+        self.synth_fil = synth_fn(self.wav2vec2.channels)
 
     def analyze_wav2vec2(self, audio: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Analyze the Wav2Vec2.0-relative features.
