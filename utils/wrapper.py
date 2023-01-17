@@ -50,13 +50,13 @@ class TrainingWrapper:
         Args:
             bunch: input tensors.
                 sid: [np.long; [B]], speaker id.
-                length: [np.long; [B, 2]], speech lengths.
-                speech1, speech2: [np.float32; [B, T]], speaches.
+                speeches: [np.float32; [B, T]], speeches.
+                lengths: [np.long; [B]], speech lengths.
         Returns:
             randomly segmented spectrogram and audios.
         """
         # [B], [B, 2], [B, T], [B, T]
-        sid, lengths, s1, s2 = bunch
+        _, speeches, lengths = bunch
         def segment(seq: np.ndarray, len_: np.ndarray) -> np.ndarray:
             # [B]
             start = np.random.randint(np.maximum(1, len_ - self.seglen))
@@ -64,8 +64,8 @@ class TrainingWrapper:
             return np.array(
                 [np.pad(q[s:s + self.seglen], [0, max(self.seglen - len(q), 0)])
                  for q, s in zip(seq, start)])
-        # [B], [B, seglen], [B, seglen]
-        return sid, segment(s1, lengths[:, 0]), segment(s2, lengths[:, 1])
+        # [B], [B, seglen]
+        return segment(speeches, lengths)
 
     def sample_like(self, signal: torch.Tensor) -> List[torch.Tensor]:
         """Sample augmentation parameters.
@@ -85,6 +85,7 @@ class TrainingWrapper:
         # sample shifts
         fs = sampler(self.config.train.formant_shift)
         ps = sampler(self.config.train.pitch_shift)
+        pr = sampler(self.config.train.pitch_range)
         # parametric equalizer
         peaks = self.config.train.num_peak
         # quality factor
@@ -92,7 +93,7 @@ class TrainingWrapper:
         # gains
         g_min, g_max = self.config.train.g_min, self.config.train.g_max
         gain = torch.rand(bsize, peaks + 2, device=signal.device) * (g_max - g_min) + g_min
-        return fs, ps, power, gain
+        return fs, ps, pr, power, gain
 
     def augment(self, signal: torch.Tensor, ps: bool = True) -> torch.Tensor:
         """Augment the speech.
@@ -107,11 +108,11 @@ class TrainingWrapper:
         saves = None
         while saves is None or len(saves) < bsize:
             # [B] x 4
-            fshift, pshift, power, gain = self.sample_like(signal)
+            fshift, pshift, prange, power, gain = self.sample_like(signal)
             if not ps:
                 pshift = None
             # [B, T]
-            out = self.aug.forward(signal, pshift, fshift, power, gain)
+            out = self.aug.forward(signal, pshift, prange, fshift, power, gain)
             # for covering unexpected NaN
             nan = out.isnan().any(dim=-1)
             if not nan.all():
@@ -123,39 +124,31 @@ class TrainingWrapper:
         # [B, T]
         return saves[:bsize]
 
-    def loss_discriminator(self,
-                           sid: torch.Tensor,
-                           s1: torch.Tensor,
-                           s2: torch.Tensor,
-                           r1: bool = True) \
+    def loss_discriminator(self, seg: torch.Tensor, r1: bool = True) \
             -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """Compute the discriminator loss.
         Args:
-            sid: [torch.long; [B]], speaker id.
-            s1, s2: [torch.float32; [B, seglen]], segmented speech.
+            seg: [torch.float32; [B, seglen]], segmented speech.
             r1: whether use r1-regularization, for evaluation loss.
         Returns:
             loss and disctionaries.
         """
         with torch.no_grad():
             # augmentation
-            s1_f = self.augment(s1)
-            s1_g = self.augment(s1, ps=False)
+            seg_f = self.augment(seg)
+            seg_g = self.augment(seg, ps=False)
             # _, [B, S, 1024]
-            _, linguistic = self.model.wav2vec2.forward(s1_f)
+            _, linguistic = self.model.wav2vec2.forward(seg_f)
             # [B, 1024, S]
             linguistic = linguistic.transpose(1, 2)
             # [B, T / mel_strides]
-            energy, mel = self.model.analyze_energy(s1)
+            energy, mel = self.model.analyze_energy(seg)
             # [B, Y, T / yin_strides]
-            yingram = self.model.sample_yingram(
-                self.model.analyze_yingram(s1_g))
-
-        # [B, ver_out_channels]
-        _, spk1 = self.model.analyze_wav2vec2(s1)
-        _, spk2 = self.model.analyze_wav2vec2(s2)
+            yingram = self.model.sample_yingram(self.model.analyze_yingram(seg_g))
+            # [B, ver_out_channels]
+            _, spk = self.model.analyze_wav2vec2(seg)
         # [B, mel, T]
-        rctor, _, _ = self.model.synthesize(linguistic, spk1, energy, yingram)
+        rctor, _, _ = self.model.synthesize(linguistic, spk, energy, yingram)
         # for gradient penalty
         mel.requires_grad_(r1)
         # [B, T], [B, spk, T]
@@ -168,16 +161,25 @@ class TrainingWrapper:
         start = np.random.randint(bsize - 1) + 1
         # [B], for shuffling
         indices = (np.arange(bsize) + start) % bsize
-        # [B, T]
-        pos_real = torch.matmul(spk2[:, None], spk_real).squeeze(dim=1)
-        neg_real = torch.matmul(spk2[indices, None], spk_real).squeeze(dim=1)
-        # [B, T]
-        pos_fake = torch.matmul(spk2[:, None], spk_fake).squeeze(dim=1)
-        neg_fake = torch.matmul(spk2[indices, None], spk_fake).squeeze(dim=1)
+        # [B, ver_out_channels]
+        spk_pos, spk_neg = spk, spk[indices]
 
         # [B, T]
-        logits_real = d_real + pos_real - neg_real
-        logits_fake = d_fake + pos_fake - neg_fake
+        pos_real = torch.matmul(spk_pos[:, None], spk_real).squeeze(dim=1)
+        neg_real = torch.matmul(spk_neg[:, None], spk_real).squeeze(dim=1)
+        # [B, T]
+        pos_fake = torch.matmul(spk_pos[:, None], spk_fake).squeeze(dim=1)
+        neg_fake = torch.matmul(spk_neg[:, None], spk_fake).squeeze(dim=1)
+
+        # [B, T], average is not necessary since generation is conditioned.
+        # use Choi et al., ICLR2020, instead of NANSY objective
+        rel_real = d_real - d_fake + pos_real - pos_fake
+        # NANSY: neg_fake - neg_real
+        rel_cont = pos_real - neg_real
+        # [B, T]
+        logits = rel_real + rel_cont
+        # [B, T]
+        disc = F.softplus(-logits).mean()
 
         if r1:
             # gradient penalty
@@ -193,89 +195,83 @@ class TrainingWrapper:
             r1_penalty = torch.tensor([0.], device=mel.device)
 
         # masking if fail to construct negative pair
-        logits_real = logits_real[sid != sid[indices]]
-        logits_fake = logits_fake[sid != sid[indices]]
-        disc_real = F.softplus(-logits_real).mean()
-        disc_fake = F.softplus(logits_fake).mean()
-        loss = disc_real + disc_fake + r1_penalty * 10
+        loss = disc + r1_penalty * 10
         losses = {
             'disc/loss': loss.item(),
             'disc/r1': r1_penalty.item(),
-            'disc/disc-real': disc_real.item(),
-            'disc/disc-fake': disc_fake.item(),
+            'disc/disc': disc.item(),
+            'disc-aux/logits': logits.mean().item(),
             'disc-aux/d-real': d_real.mean().item(),
             'disc-aux/d-fake': d_fake.mean().item(),
             'disc-aux/pos-real': pos_real.mean().item(),
             'disc-aux/pos-fake': pos_fake.mean().item(),
-            'disc-aux/neg-real': neg_real[sid != sid[indices]].mean().item(),
-            'disc-aux/neg-fake': neg_fake[sid != sid[indices]].mean().item()}
-        # for visualization
-        # [B, T, Y] -> [B, T, Y // bins] -> [B, Y // bins, T]
-        yingram = F.interpolate(
-            yingram.transpose(1, 2),
-            scale_factor=self.config.model.yin_bins ** -1, mode='linear').transpose(1, 2)
-        return loss, losses, {
-            'yingram': yingram.cpu().detach().numpy(),
-            'mel': mel.cpu().detach().numpy(),
-            'rctor': rctor.cpu().detach().numpy()}
+            'disc-aux/neg-real': neg_real.mean().item(),
+            'disc-aux/neg-fake': neg_fake.mean().item()}
+        return loss, losses
 
-    def loss_generator(self, sid: torch.Tensor, s1: torch.Tensor, s2: torch.Tensor) \
-            -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    def loss_generator(self, seg: torch.Tensor) \
+            -> Tuple[torch.Tensor, Dict[str, torch.Tensor], Dict[str, np.ndarray]]:
         """Compute the generator loss.
         Args:
-            sid: [torch.long; [B]], speaker id.
-            s1, s2: [torch.float32; [B, seglen]], segmented speech.
+            seg: [torch.float32; [B, seglen]], segmented speech.
         Returns:
             loss and disctionaries.
         """
         with torch.no_grad():
             # augmentation
-            s1_f = self.augment(s1)
-            s1_g = self.augment(s1, ps=False)
+            seg_f = self.augment(seg)
+            seg_g = self.augment(seg, ps=False)
             # [B, S, 1024]
-            _, linguistic = self.model.wav2vec2.forward(s1_f)
+            _, linguistic = self.model.wav2vec2.forward(seg_f)
             # [B, 1024, S]
             linguistic = linguistic.transpose(1, 2)
             # [B, T / mel_strides]
-            energy, mel = self.model.analyze_energy(s1)
+            energy, mel = self.model.analyze_energy(seg)
             # [B, Y, T / yin_strides]
             yingram = self.model.sample_yingram(
-                self.model.analyze_yingram(s1_g))
+                self.model.analyze_yingram(seg_g))
         # [B, ver_out_channels]
-        _, spk1 = self.model.analyze_wav2vec2(s1)
-        _, spk2 = self.model.analyze_wav2vec2(s2)
+        _, spk = self.model.analyze_wav2vec2(seg)
         # [B, mel, T]
-        rctor, filter_, source = self.model.synthesize(linguistic, spk1, energy, yingram)
+        rctor, filter_, source = self.model.synthesize(linguistic, spk, energy, yingram)
         # []
         rctor_loss = (mel - rctor).abs().mean()
 
         # [B, T], [B, spk, T]
-        d_fake, spk = self.disc.forward(rctor)
+        d_real, spk_real = self.disc.forward(mel)
+        # [B, T], [B, spk, T]
+        d_fake, spk_fake = self.disc.forward(rctor)
 
-        bsize = spk.shape[0]        
+        bsize = spk_real.shape[0]
         # [], range [1, B - 1]
         start = np.random.randint(bsize - 1) + 1
         # [B], for shuffling
         indices = (np.arange(bsize) + start) % bsize
+        # [B, ver_out_channels]
+        spk_pos, spk_neg = spk, spk[indices]
+
         # [B, T]
-        pos = torch.matmul(spk2[:, None], spk).squeeze(dim=1)
-        neg = torch.matmul(spk2[indices, None], spk).squeeze(dim=1)
+        pos_real = torch.matmul(spk_pos[:, None], spk_real).squeeze(dim=1)
+        neg_real = torch.matmul(spk_neg[:, None], spk_real).squeeze(dim=1)
         # [B, T]
-        logits = d_fake + pos - neg
-        # masking if fail to construct negative pair
-        logits = logits[sid != sid[indices]]
+        pos_fake = torch.matmul(spk_pos[:, None], spk_fake).squeeze(dim=1)
+        neg_fake = torch.matmul(spk_neg[:, None], spk_fake).squeeze(dim=1)
+
+        # [B, T]
+        rel_fake = d_fake - d_real + pos_fake - pos_real
+        rel_cont = pos_fake - neg_fake
+        # [B, T]
+        logits = rel_fake + rel_cont
+        # []
         disc = F.softplus(-logits).mean()
 
         # [B, B], metric purpose
-        confusion = torch.matmul(spk1, spk2.T)
-        mask = (sid[:, None] == sid) * (
-            1 - torch.eye(bsize, device=self.device))
-        # placeholder
-        metric_pos, metric_neg = None, None
-        if mask.sum() > 0:
-            metric_pos = (confusion * mask).mean().item()
-        if (1 - mask).sum() > 0:
-            metric_neg = (confusion * (1 - mask)).mean().item()
+        confusion = torch.matmul(spk, spk.T)
+        # [B, B]
+        mask = torch.eye(bsize, device=self.device)
+        # []
+        metric_pos = (confusion * mask).sum().item() / bsize
+        metric_neg = (confusion * (1 - mask)).sum().item() / (bsize * (bsize - 1))
 
         # []
         loss = disc + rctor_loss
@@ -283,19 +279,20 @@ class TrainingWrapper:
             'gen/loss': loss.item(),
             'gen/rctor': rctor_loss.item(),
             'gen/disc': disc.item(),
+            'gen-aux/logits': logits.mean().item(),
+            'gen-aux/d-real': d_real.mean().item(),
             'gen-aux/d-fake': d_fake.mean().item(),
-            'gen-aux/pos': pos.mean().item(),
-            'gen-aux/neg': neg[sid != sid[indices]].mean().item()}
+            'gen-aux/pos-real': pos_real.mean().item(),
+            'gen-aux/pos-fake': pos_fake.mean().item(),
+            'gen-aux/neg-real': neg_real.mean().item(),
+            'gen-aux/neg-fake': neg_fake.mean().item(),
+            'metric/pos': metric_pos,
+            'metric/neg': metric_neg}
         # for visualization
         # [B, T, Y] -> [B, T, Y // bins] -> [B, Y // bins, T]
         yingram = F.interpolate(
             yingram.transpose(1, 2),
             scale_factor=self.config.model.yin_bins ** -1, mode='linear').transpose(1, 2)
-        # conditional metric
-        if metric_pos is not None:
-            losses['metric/pos'] = metric_pos
-        if metric_neg is not None:
-            losses['metric/neg'] = metric_neg
         return loss, losses, {
             'yingram': yingram.cpu().detach().numpy(),
             'mel': mel.cpu().detach().numpy(),
