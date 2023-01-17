@@ -39,6 +39,7 @@ class Augment(nn.Module):
     def forward(self,
                 wavs: torch.Tensor,
                 pitch_shift: Optional[torch.Tensor] = None,
+                pitch_range: Optional[torch.Tensor] = None,
                 formant_shift: Optional[torch.Tensor] = None,
                 quality_power: Optional[torch.Tensor] = None,
                 gain: Optional[torch.Tensor] = None) -> torch.Tensor:
@@ -46,6 +47,7 @@ class Augment(nn.Module):
         Args:
             wavs: [torch.float32; [B, T]], audio signal.
             pitch_shift: [torch.float32; [B]], pitch shifts.
+            pitch_range: [torch.float32; [B]], pitch ranges.
             formant_shift: [torch.float32; [B]], formant shifts.
             quality_power: [torch.float32; [B, num_peak + 2]],
                 exponents of quality factor, for PEQ.
@@ -94,17 +96,23 @@ class Augment(nn.Module):
             self.config.model.mel_windows,
             self.window).clamp(-1., 1.)
         # max value normalization
-        out = out / out.abs().max(dim=-1, keepdim=True).values.clamp_min(1e-7)
-        if formant_shift is None and pitch_shift is None:
+        out = out / out.abs().amax(dim=-1, keepdim=True).clamp_min(1e-7)
+        if formant_shift is None and pitch_shift is None and pitch_range is None:
             return out
         # praat-based augmentation
         if formant_shift is None:
             formant_shift = torch.ones(bsize)
         if pitch_shift is None:
             pitch_shift = torch.ones(bsize)
-        out = torch.tensor(np.stack([self.praat.augment(o, fs.item(), ps.item())
-            for o, fs, ps in zip(
-                out.cpu().numpy(),
-                formant_shift.cpu().numpy(),
-                pitch_shift.cpu().numpy())], axis=0), device=out.device, dtype=torch.float32)
+        if pitch_range is None:
+            pitch_range = torch.ones(bsize)
+        out = torch.tensor(
+            np.stack([
+                self.praat.augment(o, fs.item(), ps.item(), pr.item())
+                for o, fs, ps, pr in zip(
+                    out.cpu().numpy(),
+                    formant_shift.cpu().numpy(),
+                    pitch_shift.cpu().numpy(),
+                    pitch_range.cpu().numpy())], axis=0),
+            device=out.device, dtype=torch.float32)
         return out
