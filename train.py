@@ -91,17 +91,17 @@ class Trainer:
         for epoch in tqdm.trange(epoch, self.config.train.epoch):
             with tqdm.tqdm(total=len(self.loader), leave=False) as pbar:
                 for it, bunch in enumerate(self.loader):
-                    sid, s1, s2 = self.wrapper.wrap(
+                    seg = self.wrapper.wrap(
                         self.wrapper.random_segment(bunch))
                     loss_g, losses_g, aux_g = \
-                        self.wrapper.loss_generator(sid, s1, s2)
+                        self.wrapper.loss_generator(seg)
                     # update
                     self.optim_g.zero_grad()
                     loss_g.backward()
                     self.optim_g.step()
 
                     loss_d, losses_d = \
-                        self.wrapper.loss_discriminator(sid, s1, s2)
+                        self.wrapper.loss_discriminator(seg)
                     # update
                     self.optim_d.zero_grad()
                     loss_d.backward()
@@ -149,19 +149,15 @@ class Trainer:
             self.model.save(f'{self.ckpt_path}_{epoch}.ckpt', self.optim_g)
             self.disc.save(f'{self.ckpt_path}_{epoch}.ckpt-disc', self.optim_d)
 
-            losses = {
-                key: [] for key in {**losses_d, **losses_g}}
-            COND_KEYS = ['metric/pos', 'metric/neg']
-            for key in COND_KEYS:
-                losses[key] = []
-
             with torch.no_grad():
                 self.model.eval()
+                losses = {
+                    key: [] for key in {**losses_d, **losses_g}}
                 for bunch in self.testloader:
-                    sid, s1, s2 = self.wrapper.wrap(
+                    seg = self.wrapper.wrap(
                         self.wrapper.random_segment(bunch))
-                    _, losses_g, _ = self.wrapper.loss_generator(sid, s1, s2)
-                    _, losses_d, _ = self.wrapper.loss_discriminator(sid, s1, s2, r1=False)
+                    _, losses_g, _ = self.wrapper.loss_generator(seg)
+                    _, losses_d, _ = self.wrapper.loss_discriminator(seg, r1=False)
                     for key, val in {**losses_g, **losses_d}.items():
                         losses[key].append(val)
                 # test log
