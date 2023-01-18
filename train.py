@@ -235,7 +235,7 @@ if __name__ == '__main__':
         speechset.utils.DumpReader('./datasets/test-clean', config.model.sr), device)
     # weighted random wrapper
     # , guarantee the all speaker in single batch is all different
-    dataset = WeightedRandomWrapper(dataset)
+    dataset = WeightedRandomWrapper(dataset, subepoch=60)
 
     # model definition
     model = Nansy(config.model)
