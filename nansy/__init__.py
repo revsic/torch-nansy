@@ -222,7 +222,7 @@ class Nansy(nn.Module):
             states: state dict.
             optim: optimizer, if provided.
         """
-        self.load_state_dict(states['model'])
+        self.load_state_dict(states['model'], strict=False)
         if optim is not None:
             optim.load_state_dict(states['optim'])
 
