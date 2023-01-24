@@ -44,15 +44,21 @@ if args.median_shift:
     # midi steps
     BINS_PER_OCTAVE = 12
     steps = BINS_PER_OCTAVE * (np.log2(pi_median) - np.log2(pc_median))
+    print(f'[*] shift {int(steps)} semitone steps')
     # moving median
-    context = librosa.effects.pitch_shift(
+    context_p = librosa.effects.pitch_shift(
         context, sr=SR, n_steps=int(steps), bins_per_octave=BINS_PER_OCTAVE)
-    librosa.output.write_wav(f'{args.out_path}.shifted.wav', context, sr=SR)
+    librosa.output.write_wav(f'{args.out_path}.shifted.wav', context_p, sr=SR)
+else:
+    context_p = context
 
 with torch.no_grad():
     context = torch.tensor(context[None], device=device)
     # extracted features
     feat = nansy.analyze(context)
+    # [1, Y, S]
+    yingram = nansy.analyze_yingram(
+        torch.tensor(context_p[None], device=device))
 
     # [1, T]
     identity = torch.tensor(identity[None], device=device)
@@ -64,7 +70,7 @@ with torch.no_grad():
         feat['linguistic'],
         spk,
         feat['energy'],
-        nansy.sample_yingram(feat['yingram']))
+        nansy.sample_yingram(yingram))
 
     # vocoding
     out = hifigan.forward(mel).clamp(-1, 1).squeeze(dim=0)
