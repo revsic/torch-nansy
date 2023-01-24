@@ -29,7 +29,7 @@ class TrainConfig:
         self.g_max = 12
 
         # loader settings
-        self.batch = 32
+        self.batch = 64
         self.shuffle = True
         self.num_workers = 4
         self.pin_memory = True
