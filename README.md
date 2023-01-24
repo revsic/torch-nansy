@@ -70,6 +70,12 @@ nansy = Nansy.load(ckpt)
 nansy.eval()
 ```
 
-## [TODO] Learning curve and Figures
+## Learning curve and Figures
+
+Epoch: 65
+
+![common](./rsrc/common.png)
+![figure](./rsrc/figure.png)
+![images](./rsrc/images.png)
 
 ## [TODO] Samples
